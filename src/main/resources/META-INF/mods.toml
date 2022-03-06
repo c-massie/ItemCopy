@@ -36,7 +36,7 @@ authors="Chris Massie" #optional
 description='''
 This mod allows the copying of items between worlds.
 '''
-[[dependencies.candbpatterncopier]]
+[[dependencies.itemcopy]]
     modId="minecraft"
     mandatory=true
 # This version range declares a minimum of the current minecraft version up to but not including the next major version
