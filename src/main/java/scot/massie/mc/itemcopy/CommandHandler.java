@@ -5,13 +5,13 @@ import com.mojang.brigadier.builder.LiteralArgumentBuilder;
 import com.mojang.brigadier.context.CommandContext;
 import com.mojang.brigadier.context.ParsedCommandNode;
 import com.mojang.brigadier.suggestion.SuggestionProvider;
-import net.minecraft.command.CommandSource;
-import net.minecraft.command.Commands;
-import net.minecraft.entity.player.ServerPlayerEntity;
-import net.minecraft.item.ItemStack;
-import net.minecraft.util.Hand;
-import net.minecraft.util.ResourceLocation;
-import net.minecraft.util.text.StringTextComponent;
+import net.minecraft.commands.CommandSourceStack;
+import net.minecraft.commands.Commands;
+import net.minecraft.network.chat.TextComponent;
+import net.minecraft.resources.ResourceLocation;
+import net.minecraft.server.level.ServerPlayer;
+import net.minecraft.world.InteractionHand;
+import net.minecraft.world.item.ItemStack;
 
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -28,17 +28,16 @@ public final class CommandHandler
     private interface TriFunc<T1, T2, T3, R>
     { R apply(T1 val1, T2 val2, T3 val3); }
 
-    private static SuggestionProvider<CommandSource> getCopyPathSuggestionProvider(
+    private static SuggestionProvider<CommandSourceStack> getCopyPathSuggestionProvider(
             @SuppressWarnings("BoundedWildcard")
             final TriFunc<UUID, ResourceLocation, List<String>, List<String>> suggestionGetterFunction)
     {
         return (context, builder) ->
         {
-            if(!(context.getSource().getEntity() instanceof ServerPlayerEntity))
+            if(!(context.getSource().getEntity() instanceof ServerPlayer sender))
                 return builder.buildFuture();
 
-            ServerPlayerEntity sender = (ServerPlayerEntity)context.getSource().getEntity();
-            ItemStack itemStack = sender.getItemInHand(Hand.MAIN_HAND);
+            ItemStack itemStack = sender.getItemInHand(InteractionHand.MAIN_HAND);
 
             if(itemStack == ItemStack.EMPTY || !playerCanPasteItem(sender, itemStack))
                 return builder.buildFuture();
@@ -68,20 +67,20 @@ public final class CommandHandler
         };
     }
 
-    private static final SuggestionProvider<CommandSource> savedCopyPathsProvider
+    private static final SuggestionProvider<CommandSourceStack> savedCopyPathsProvider
             = getCopyPathSuggestionProvider(CopyNamesServerStore::getNameSuggestions);
 
-    private static final SuggestionProvider<CommandSource> savedCopyPathDirectoriesProvider
+    private static final SuggestionProvider<CommandSourceStack> savedCopyPathDirectoriesProvider
             = getCopyPathSuggestionProvider(CopyNamesServerStore::getFolderSuggestions);
 
 
-    public static final LiteralArgumentBuilder<CommandSource> copyCommand
+    public static final LiteralArgumentBuilder<CommandSourceStack> copyCommand
             = Commands.literal("copyitem")
                     .then(Commands.argument("copypath", StringArgumentType.greedyString())
                             .suggests(savedCopyPathDirectoriesProvider)
                             .executes(CommandHandler::cmdCopy));
 
-    public static final LiteralArgumentBuilder<CommandSource> pasteCommand
+    public static final LiteralArgumentBuilder<CommandSourceStack> pasteCommand
             = Commands.literal("pasteitem")
                     .then(Commands.argument("copypath", StringArgumentType.greedyString())
                             .suggests(savedCopyPathsProvider)
@@ -91,7 +90,7 @@ public final class CommandHandler
     private CommandHandler()
     { }
 
-    public static boolean playerCanPasteItem(ServerPlayerEntity player, ItemStack itemStack)
+    public static boolean playerCanPasteItem(ServerPlayer player, ItemStack itemStack)
     { return player.hasPermissions(4) || ItemWhitelist.itemIsAllowed(itemStack); }
 
     public static List<String> splitArguments(String args)
@@ -102,15 +101,15 @@ public final class CommandHandler
         return Arrays.asList(args.split("\\s+"));
     }
 
-    private static List<String> getCopyPath(CommandContext<CommandSource> ctx)
+    private static List<String> getCopyPath(CommandContext<CommandSourceStack> ctx)
     { return getCopyPath(ctx, false); }
 
-    private static List<String> getCopyPath(CommandContext<CommandSource> ctx,
+    private static List<String> getCopyPath(CommandContext<CommandSourceStack> ctx,
                                             boolean ignoreLastStepIfNotFollowedBySpace)
     {
         String copyPathUnsplit = null;
 
-        for(ParsedCommandNode<CommandSource> parsedNode : ctx.getNodes())
+        for(ParsedCommandNode<CommandSourceStack> parsedNode : ctx.getNodes())
             if(parsedNode.getNode().getName().equals("copypath"))
                 copyPathUnsplit = parsedNode.getRange().get(ctx.getInput());
 
@@ -132,22 +131,21 @@ public final class CommandHandler
         return path;
     }
 
-    public static int cmdCopy(CommandContext<CommandSource> context)
+    public static int cmdCopy(CommandContext<CommandSourceStack> context)
     {
-        CommandSource src = context.getSource();
+        CommandSourceStack src = context.getSource();
 
-        if(!(src.getEntity() instanceof ServerPlayerEntity))
+        if(!(src.getEntity() instanceof ServerPlayer player))
         {
-            src.sendFailure(new StringTextComponent("Only players can copy items in their hands."));
+            src.sendFailure(new TextComponent("Only players can copy items in their hands."));
             return 1;
         }
 
-        ServerPlayerEntity player = (ServerPlayerEntity)(src.getEntity());
-        ItemStack itemInHand = player.getItemInHand(Hand.MAIN_HAND);
+        ItemStack itemInHand = player.getItemInHand(InteractionHand.MAIN_HAND);
 
         if(itemInHand == ItemStack.EMPTY)
         {
-            src.sendFailure(new StringTextComponent("You need to have something in your hand to copy."));
+            src.sendFailure(new TextComponent("You need to have something in your hand to copy."));
             return 1;
         }
 
@@ -157,35 +155,34 @@ public final class CommandHandler
         Copier.copyItem(player, itemInHand, copyPath);
 
         if(copyAlreadyExisted)
-            src.sendSuccess(new StringTextComponent("Copy overwritten: " + String.join(" ", copyPath)), false);
+            src.sendSuccess(new TextComponent("Copy overwritten: " + String.join(" ", copyPath)), false);
         else
-            src.sendSuccess(new StringTextComponent("Copy saved: " + String.join(" ", copyPath)), false);
+            src.sendSuccess(new TextComponent("Copy saved: " + String.join(" ", copyPath)), false);
 
         return 1;
     }
 
-    public static int cmdPaste(CommandContext<CommandSource> context)
+    public static int cmdPaste(CommandContext<CommandSourceStack> context)
     {
-        CommandSource src = context.getSource();
+        CommandSourceStack src = context.getSource();
 
-        if(!(src.getEntity() instanceof ServerPlayerEntity))
+        if(!(src.getEntity() instanceof ServerPlayer player))
         {
-            src.sendFailure(new StringTextComponent("Only players can paste items."));
+            src.sendFailure(new TextComponent("Only players can paste items."));
             return 1;
         }
 
-        ServerPlayerEntity player = (ServerPlayerEntity)(src.getEntity());
-        ItemStack itemInHand = player.getItemInHand(Hand.MAIN_HAND);
+        ItemStack itemInHand = player.getItemInHand(InteractionHand.MAIN_HAND);
 
         if(itemInHand == ItemStack.EMPTY)
         {
-            src.sendFailure(new StringTextComponent("You need to have something in your hand to paste to."));
+            src.sendFailure(new TextComponent("You need to have something in your hand to paste to."));
             return 1;
         }
 
         if(!playerCanPasteItem(player, itemInHand))
         {
-            src.sendFailure(new StringTextComponent("You do not have permission to paste that item."));
+            src.sendFailure(new TextComponent("You do not have permission to paste that item."));
             return 1;
         }
 
@@ -196,10 +193,10 @@ public final class CommandHandler
         // before calling this command, it can report the wrong success message. This doesn't affect whether it actually
         // pastes to the item though.
         if(CopyNamesServerStore.nameExists(player, itemInHand.getItem().getRegistryName(), copyPath))
-            src.sendSuccess(new StringTextComponent("Pasted: " + String.join(" ", copyPath)), false);
+            src.sendSuccess(new TextComponent("Pasted: " + String.join(" ", copyPath)), false);
         else
-            src.sendFailure(new StringTextComponent("No copy with the name or path \"" + String.join(" ", copyPath)
-                                                    + "\" existed."));
+            src.sendFailure(new TextComponent("No copy with the name or path \"" + String.join(" ", copyPath)
+                                              + "\" existed."));
 
         return 1;
     }

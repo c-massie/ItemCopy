@@ -1,14 +1,14 @@
 package scot.massie.mc.itemcopy;
 
-import net.minecraft.entity.player.ServerPlayerEntity;
-import net.minecraft.item.ItemStack;
-import net.minecraft.nbt.CompoundNBT;
-import net.minecraft.network.PacketBuffer;
-import net.minecraft.util.ResourceLocation;
-import net.minecraftforge.fml.network.NetworkDirection;
-import net.minecraftforge.fml.network.NetworkEvent;
-import net.minecraftforge.fml.network.PacketDistributor;
-import net.minecraftforge.fml.network.simple.SimpleChannel;
+import net.minecraft.nbt.CompoundTag;
+import net.minecraft.network.FriendlyByteBuf;
+import net.minecraft.resources.ResourceLocation;
+import net.minecraft.server.level.ServerPlayer;
+import net.minecraft.world.item.ItemStack;
+import net.minecraftforge.fmllegacy.network.NetworkDirection;
+import net.minecraftforge.fmllegacy.network.NetworkEvent;
+import net.minecraftforge.fmllegacy.network.PacketDistributor;
+import net.minecraftforge.fmllegacy.network.simple.SimpleChannel;
 import org.apache.commons.io.FileUtils;
 
 import java.io.File;
@@ -35,9 +35,9 @@ public final class Copier
         public final List<String> copyPath;
 
         @SuppressWarnings("PublicField")
-        public final CompoundNBT data;
+        public final CompoundTag data;
 
-        public CopyPacket(String itemIdNamespace, String itemIdPath, List<String> copyPath, CompoundNBT data)
+        public CopyPacket(String itemIdNamespace, String itemIdPath, List<String> copyPath, CompoundTag data)
         {
             this.itemIdNamespace = itemIdNamespace;
             this.itemIdPath = itemIdPath;
@@ -45,10 +45,10 @@ public final class Copier
             this.data = data;
         }
 
-        public CopyPacket(ResourceLocation itemId, List<String> copyPath, CompoundNBT data)
+        public CopyPacket(ResourceLocation itemId, List<String> copyPath, CompoundTag data)
         { this(itemId.getNamespace(), itemId.getPath(), copyPath, data); }
 
-        public void encode(PacketBuffer buf)
+        public void encode(FriendlyByteBuf buf)
         {
             buf.writeUtf(itemIdNamespace);
             buf.writeUtf(itemIdPath);
@@ -60,7 +60,7 @@ public final class Copier
             buf.writeNbt(data);
         }
 
-        public static CopyPacket decode(PacketBuffer buf)
+        public static CopyPacket decode(FriendlyByteBuf buf)
         {
             String itemIdNamespace = buf.readUtf();
             String itemIdPath = buf.readUtf();
@@ -70,7 +70,7 @@ public final class Copier
             for(int i = 0; i < copyPathSize; i++)
                 copyPath.add(buf.readUtf());
 
-            CompoundNBT data = buf.readNbt();
+            CompoundTag data = buf.readNbt();
             return new CopyPacket(itemIdNamespace, itemIdPath, copyPath, data);
         }
     }
@@ -96,12 +96,12 @@ public final class Copier
     //endregion
 
     //region server-side methods
-    public static void copyItem(ServerPlayerEntity player, ItemStack itemStack, List<String> copyPath)
+    public static void copyItem(ServerPlayer player, ItemStack itemStack, List<String> copyPath)
     {
         // TO DO: Add check to make sure data from itemStack isn't too big. If it is, fallback on sending a "copy it
         // client-side" instruction.
 
-        CompoundNBT nbt = itemStack.getTag();
+        CompoundTag nbt = itemStack.getTag();
 
         if(nbt != null)
         {

@@ -5,17 +5,8 @@ import java.util.stream.Collectors;
 
 public final class PathSanitiser
 {
-    private static final class Substitution
-    {
-        public final String unsanitised;
-        public final String sanitised;
-
-        private Substitution(String unsanitised, String sanitised)
-        {
-            this.unsanitised = unsanitised;
-            this.sanitised = sanitised;
-        }
-    }
+    private record Substitution(String unsanitised, String sanitised)
+    {}
 
     private PathSanitiser()
     {}

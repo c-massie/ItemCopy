@@ -2,17 +2,17 @@ package scot.massie.mc.itemcopy;
 
 import com.mojang.brigadier.exceptions.CommandSyntaxException;
 import net.minecraft.client.Minecraft;
-import net.minecraft.client.entity.player.ClientPlayerEntity;
-import net.minecraft.entity.player.ServerPlayerEntity;
-import net.minecraft.item.ItemStack;
-import net.minecraft.nbt.JsonToNBT;
-import net.minecraft.network.PacketBuffer;
-import net.minecraft.util.Hand;
-import net.minecraft.util.ResourceLocation;
-import net.minecraftforge.fml.network.NetworkDirection;
-import net.minecraftforge.fml.network.NetworkEvent;
-import net.minecraftforge.fml.network.PacketDistributor;
-import net.minecraftforge.fml.network.simple.SimpleChannel;
+import net.minecraft.client.player.LocalPlayer;
+import net.minecraft.nbt.NbtUtils;
+import net.minecraft.network.FriendlyByteBuf;
+import net.minecraft.resources.ResourceLocation;
+import net.minecraft.server.level.ServerPlayer;
+import net.minecraft.world.InteractionHand;
+import net.minecraft.world.item.ItemStack;
+import net.minecraftforge.fmllegacy.network.NetworkDirection;
+import net.minecraftforge.fmllegacy.network.NetworkEvent;
+import net.minecraftforge.fmllegacy.network.PacketDistributor;
+import net.minecraftforge.fmllegacy.network.simple.SimpleChannel;
 import org.apache.commons.io.FileUtils;
 
 import java.io.File;
@@ -48,7 +48,7 @@ public final class Paster
         public PasteRequestPacket(ResourceLocation itemId, List<String> copyPath)
         { this(itemId.getNamespace(), itemId.getPath(), copyPath); }
 
-        public void encode(PacketBuffer buf)
+        public void encode(FriendlyByteBuf buf)
         {
             buf.writeUtf(itemIdNamespace);
             buf.writeUtf(itemIdPath);
@@ -58,7 +58,7 @@ public final class Paster
                 buf.writeUtf(step);
         }
 
-        public static PasteRequestPacket decode(PacketBuffer buf)
+        public static PasteRequestPacket decode(FriendlyByteBuf buf)
         {
             String itemIdNamespace = buf.readUtf();
             String itemIdPath = buf.readUtf();
@@ -93,7 +93,7 @@ public final class Paster
     //endregion
 
     //region Server-side methods
-    public static void pasteItem(ServerPlayerEntity player, ItemStack currentItemInHand, List<String> copyPath)
+    public static void pasteItem(ServerPlayer player, ItemStack currentItemInHand, List<String> copyPath)
     {
         ResourceLocation itemId = currentItemInHand.getItem().getRegistryName();
 
@@ -144,9 +144,9 @@ public final class Paster
             return;
         }
 
-        ClientPlayerEntity player = Minecraft.getInstance().player;
+        LocalPlayer player = Minecraft.getInstance().player;
         assert player != null; // This method is only called on the client-side.
-        ItemStack itemInHand = player.getItemInHand(Hand.MAIN_HAND);
+        ItemStack itemInHand = player.getItemInHand(InteractionHand.MAIN_HAND);
         ResourceLocation itemId = itemInHand.getItem().getRegistryName();
 
         if(   itemId == null
@@ -160,7 +160,7 @@ public final class Paster
         }
 
         try
-        { itemInHand.setTag(JsonToNBT.parseTag(data)); }
+        { itemInHand.setTag(NbtUtils.snbtToStructure(data)); }
         catch(CommandSyntaxException e)
         { System.err.println("Invalid item NBT file at: " + saveLocation); }
     }

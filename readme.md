@@ -34,4 +34,4 @@ Some items that seem conceptually variants of the same item may be entirely sepa
 
 ## Technical
 
-Built against Forge 36.2.22 for Minecraft 1.16.5.
+Built against Forge 37.1.1 for Minecraft 1.17.1.

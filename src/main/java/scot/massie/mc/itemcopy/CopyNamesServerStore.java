@@ -1,15 +1,15 @@
 package scot.massie.mc.itemcopy;
 
-import net.minecraft.entity.player.ServerPlayerEntity;
-import net.minecraft.network.PacketBuffer;
-import net.minecraft.util.ResourceLocation;
+import net.minecraft.network.FriendlyByteBuf;
+import net.minecraft.resources.ResourceLocation;
+import net.minecraft.server.level.ServerPlayer;
 import net.minecraftforge.client.event.ClientPlayerNetworkEvent;
 import net.minecraftforge.event.entity.player.PlayerEvent;
 import net.minecraftforge.eventbus.api.SubscribeEvent;
 import net.minecraftforge.fml.common.Mod;
-import net.minecraftforge.fml.network.NetworkDirection;
-import net.minecraftforge.fml.network.NetworkEvent;
-import net.minecraftforge.fml.network.simple.SimpleChannel;
+import net.minecraftforge.fmllegacy.network.NetworkDirection;
+import net.minecraftforge.fmllegacy.network.NetworkEvent;
+import net.minecraftforge.fmllegacy.network.simple.SimpleChannel;
 import org.apache.commons.io.monitor.FileAlterationListenerAdaptor;
 import org.apache.commons.io.monitor.FileAlterationMonitor;
 import org.apache.commons.io.monitor.FileAlterationObserver;
@@ -30,6 +30,7 @@ import java.util.stream.Stream;
 
 public final class CopyNamesServerStore
 {
+    @SuppressWarnings("ClassCanBeRecord")
     private static final class RefreshRequestPacket
     {
         public static final int messageId = 983;
@@ -43,13 +44,13 @@ public final class CopyNamesServerStore
             this.itemIdPath = itemIdPath;
         }
 
-        public void encode(PacketBuffer buf)
+        public void encode(FriendlyByteBuf buf)
         {
             buf.writeUtf(itemIdNamespace);
             buf.writeUtf(itemIdPath);
         }
 
-        public static RefreshRequestPacket decode(PacketBuffer buf)
+        public static RefreshRequestPacket decode(FriendlyByteBuf buf)
         {
             String itemIdNamespace = buf.readUtf();
             String itemIdPath = buf.readUtf();
@@ -61,13 +62,14 @@ public final class CopyNamesServerStore
     {
         public static final int messageId = 387;
 
-        public void encode(PacketBuffer buf)
+        public void encode(FriendlyByteBuf buf)
         { }
 
-        public static WipeNamesPacket decode(PacketBuffer buf)
+        public static WipeNamesPacket decode(FriendlyByteBuf buf)
         { return new WipeNamesPacket(); }
     }
 
+    @SuppressWarnings("ClassCanBeRecord")
     private static final class NamesPacket
     {
         public static final int messageId = 662;
@@ -85,7 +87,7 @@ public final class CopyNamesServerStore
             this.paths = Collections.unmodifiableCollection(paths);
         }
 
-        public void encode(PacketBuffer buf)
+        public void encode(FriendlyByteBuf buf)
         {
             buf.writeUtf(itemIdNamespace);
             buf.writeUtf(itemIdPath);
@@ -100,7 +102,7 @@ public final class CopyNamesServerStore
             }
         }
 
-        public static NamesPacket decode(PacketBuffer buf)
+        public static NamesPacket decode(FriendlyByteBuf buf)
         {
             String itemIdNamespace = buf.readUtf();
             String itemIdPath = buf.readUtf();
@@ -331,7 +333,9 @@ public final class CopyNamesServerStore
         }
     }
 
-    public static boolean nameExists(ServerPlayerEntity player, ResourceLocation itemId, List<String> path)
+    public static boolean nameExists(@SuppressWarnings("TypeMayBeWeakened") ServerPlayer player,
+                                     ResourceLocation itemId,
+                                     List<String> path)
     { return nameExists(player.getUUID(), itemId, path); }
 
     public static void storeNames(NamesPacket packet, Supplier<? extends NetworkEvent.Context> contextSupplier)
