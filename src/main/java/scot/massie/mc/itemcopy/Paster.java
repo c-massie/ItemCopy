@@ -162,10 +162,7 @@ public final class Paster
         try
         { itemInHand.setTag(JsonToNBT.parseTag(data)); }
         catch(CommandSyntaxException e)
-        {
-            System.err.println("???");
-            e.printStackTrace();
-        }
+        { System.err.println("Invalid item NBT file at: " + saveLocation); }
     }
     //endregion
 }

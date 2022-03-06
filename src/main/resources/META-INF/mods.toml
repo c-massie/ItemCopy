@@ -34,8 +34,19 @@ displayName="ItemCopy" #mandatory
 authors="Chris Massie" #optional
 # The description text for the mod (multi line!) (#mandatory)
 description='''
-This mod allows the copying of items between worlds.
+This mod allows the copying of items between worlds, by introducing the /copyitem and /pasteitem commands.
 '''
+[[dependencies.itemcopy]] #optional
+    # the modid of the dependency
+    modId="forge" #mandatory
+    # Does this dependency have to exist - if not, ordering below must be specified
+    mandatory=true #mandatory
+    # The version range of the dependency
+    versionRange="[37,)" #mandatory
+    # An ordering relationship for the dependency - BEFORE or AFTER required if the relationship is not mandatory
+    ordering="NONE"
+    # Side this dependency is applied on - BOTH, CLIENT or SERVER
+    side="BOTH"
 [[dependencies.itemcopy]]
     modId="minecraft"
     mandatory=true
