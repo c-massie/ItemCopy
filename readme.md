@@ -2,11 +2,11 @@
 
 This mod adds two commands: `/copyitem` and `/pasteitem`.
 
-`/copyitem <name>` lets you copy the current item in your hand, with a given name. This name may be multiple words long long. You can use the same name for copies of different items. (e.g. for a book and for a banner)
+The intent of this mod is to give players the ability to copy items they may have created in a way that doesn't give them the ability to create new items. It was inspired by the desire to easily store, recall, and share Chisels & Bits patterns.
+
+`/copyitem <name>` lets you copy the current item in your hand, with a given name, to a file. (see below) This name may be multiple words long. You can use the same name for copies of different items. (e.g. for a book and for a banner)
 
 `/pasteitem <name>` lets you paste a previously copied item onto the item in your hand, as long as it's an item of the same type. As you type, possible copies will be suggested. This allows you to copy and paste items between worlds and even onto servers.
-
-The intent of this mod is to give players the ability to copy items they may have created in a way that doesn't give them the ability to create new items. It was inspired by the desire to easily store, recall, and share Chisels & Bits patterns.
 
 ## Whitelist
 
@@ -18,7 +18,7 @@ As a server admin, you can modify this file to control which items are and are n
 
 ## Files
 
-Copied items are stored in the "saveditems" folder in your minecraft folder. This contains subfolders for items of each mod, which contain subfolders for individual items. (These folder names are based on item IDs)
+Copied items are stored in the "saveditems" folder in your client's minecraft folder. This contains subfolders for items of each mod, which contain subfolders for individual items. (These folder names are based on item IDs)
 
 The subfolders of those folders are arranged according to the multi-word names given to copied items, where folders are named for the words in the name.
 
