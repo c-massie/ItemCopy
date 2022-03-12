@@ -108,8 +108,9 @@ public final class Paster
     public static void handlePasteRequest(PasteRequestPacket packet,
                                           Supplier<? extends NetworkEvent.Context> contextSupplier)
     {
-        handlePasteRequest(packet);
-        contextSupplier.get().setPacketHandled(true);
+        NetworkEvent.Context ctx = contextSupplier.get();
+        ctx.enqueueWork(() -> handlePasteRequest(packet));
+        ctx.setPacketHandled(true);
     }
 
     public static void handlePasteRequest(PasteRequestPacket packet)

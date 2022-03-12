@@ -119,8 +119,9 @@ public final class Copier
     //region client-side methods
     public static void saveItemData(CopyPacket copyPacket, Supplier<? extends NetworkEvent.Context> contextSupplier)
     {
-        saveItemData(copyPacket);
-        contextSupplier.get().setPacketHandled(true);
+        NetworkEvent.Context ctx = contextSupplier.get();
+        ctx.enqueueWork(() -> saveItemData(copyPacket));
+        ctx.setPacketHandled(true);
     }
 
     public static void saveItemData(CopyPacket copyPacket)

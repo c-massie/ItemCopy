@@ -200,41 +200,56 @@ public final class CopyNamesServerStore
         }
     }
 
-    @Mod.EventBusSubscriber
-    public static class Events
+
+    public static final class Events
     {
-        // client-side only
-        @SubscribeEvent
-        public void onPlayerJoinServer(@SuppressWarnings("unused") ClientPlayerNetworkEvent.LoggedInEvent event)
-        {
-            provideAllAvailableNames();
+        // This is split into separate "Server" and "Client" listener classes because attempting to register anything in
+        // ClientPlayerNetworkEvent normally results in dedicated server crashes.* Registrations of these event
+        // listeners needs to be behind a side check. Expected functionality is that on server-side, these listeners are
+        // simply ignored and don't crash the server.
+        //
+        // * […].RuntimeException: Attempted to load class […]/MultiPlayerGameMode for invalid dist DEDICATED_SERVER
 
-            try
-            { saveFolderAlterationMonitor.start(); }
-            catch(Exception e)
-            { e.printStackTrace(); }
+        private Events()
+        { }
+
+        @Mod.EventBusSubscriber
+        public static class Server
+        {
+            @SubscribeEvent
+            public void onPlayerLeaveServer(PlayerEvent.PlayerLoggedOutEvent event)
+            { clearNames(event.getPlayer().getUUID()); }
         }
 
-        // client-side only
-        @SubscribeEvent
-        public void onPlayerLeaveServer(ClientPlayerNetworkEvent.LoggedOutEvent event)
+        @Mod.EventBusSubscriber
+        public static class Client
         {
-            // This is fired when a player leaves a world, OR when a player quits the game. If the player is not in a
-            // world when they quit the game, event.getPlayer() returns null. I'm only interested in when the player
-            // leaves a world.
-            if(event.getPlayer() == null)
-                return;
+            @SubscribeEvent()
+            public void onPlayerJoinServer(@SuppressWarnings("unused") ClientPlayerNetworkEvent.LoggedInEvent event)
+            {
+                provideAllAvailableNames();
 
-            try
-            { saveFolderAlterationMonitor.stop(); }
-            catch(Exception e)
-            { e.printStackTrace(); }
+                try
+                { saveFolderAlterationMonitor.start(); }
+                catch(Exception e)
+                { e.printStackTrace(); }
+            }
+
+            @SubscribeEvent
+            public void onPlayerLeaveServer(ClientPlayerNetworkEvent.LoggedOutEvent event)
+            {
+                // This is fired when a player leaves a world, OR when a player quits the game. If the player is not in
+                // a world when they quit the game, event.getPlayer() returns null. I'm only interested in when the
+                // player leaves a world.
+                if(event.getPlayer() == null)
+                    return;
+
+                try
+                { saveFolderAlterationMonitor.stop(); }
+                catch(Exception e)
+                { e.printStackTrace(); }
+            }
         }
-
-        // server-side only
-        @SubscribeEvent
-        public void onPlayerLeaveServer(PlayerEvent.PlayerLoggedOutEvent event)
-        { clearNames(event.getPlayer().getUUID()); }
     }
 
     private static final Map<UUID, Map<ResourceLocation, NameHierarchyNode>> nameHierarchy = new HashMap<>();
@@ -338,11 +353,11 @@ public final class CopyNamesServerStore
                                      List<String> path)
     { return nameExists(player.getUUID(), itemId, path); }
 
-    public static void storeNames(NamesPacket packet, Supplier<? extends NetworkEvent.Context> contextSupplier)
+    public static void storeNames(NamesPacket pkt, Supplier<? extends NetworkEvent.Context> contextSupplier)
     {
         NetworkEvent.Context ctx = contextSupplier.get();
         assert ctx.getSender() != null; // The packet is sent by players' clients.
-        storeNames(ctx.getSender().getUUID(), packet.itemIdNamespace, packet.itemIdPath, packet.paths);
+        ctx.enqueueWork(() -> storeNames(ctx.getSender().getUUID(), pkt.itemIdNamespace, pkt.itemIdPath, pkt.paths));
         ctx.setPacketHandled(true);
     }
 
@@ -368,7 +383,7 @@ public final class CopyNamesServerStore
     {
         NetworkEvent.Context ctx = contextSupplier.get();
         assert ctx.getSender() != null; // The packet is sent by players' clients.
-        clearNames(ctx.getSender().getUUID());
+        ctx.enqueueWork(() -> clearNames(ctx.getSender().getUUID()));
         ctx.setPacketHandled(true);
     }
 
@@ -405,8 +420,9 @@ public final class CopyNamesServerStore
     public static void provideRefreshedInfo(RefreshRequestPacket packet,
                                             Supplier<? extends NetworkEvent.Context> contextSupplier)
     {
-        provideRefreshedInfo(packet.itemIdNamespace, packet.itemIdPath);
-        contextSupplier.get().setPacketHandled(true);
+        NetworkEvent.Context ctx = contextSupplier.get();
+        ctx.enqueueWork(() -> provideRefreshedInfo(packet.itemIdNamespace, packet.itemIdPath));
+        ctx.setPacketHandled(true);
     }
 
     public static void provideRefreshedInfo(String itemIdNamespace, String itemIdPath)

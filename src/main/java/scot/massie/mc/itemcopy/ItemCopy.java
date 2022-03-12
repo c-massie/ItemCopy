@@ -1,7 +1,7 @@
 package scot.massie.mc.itemcopy;
 
-import net.minecraft.client.Minecraft;
 import net.minecraft.resources.ResourceLocation;
+import net.minecraftforge.api.distmarker.Dist;
 import net.minecraftforge.common.MinecraftForge;
 import net.minecraftforge.event.RegisterCommandsEvent;
 import net.minecraftforge.event.server.ServerStartingEvent;
@@ -10,6 +10,7 @@ import net.minecraftforge.fml.common.Mod;
 import net.minecraftforge.fml.event.lifecycle.FMLClientSetupEvent;
 import net.minecraftforge.fml.event.lifecycle.FMLCommonSetupEvent;
 import net.minecraftforge.fml.javafmlmod.FMLJavaModLoadingContext;
+import net.minecraftforge.fml.loading.FMLLoader;
 import net.minecraftforge.network.NetworkRegistry;
 import net.minecraftforge.network.simple.SimpleChannel;
 
@@ -18,7 +19,7 @@ import java.io.File;
 @Mod("itemcopy")
 public class ItemCopy
 {
-    private static File clientSaveDirectory = null;
+    private static final File clientSaveDirectory = FMLLoader.getGamePath().resolve("saveditems").toFile();
     static final String itemFileExtension = ".itemnbt";
 
     public ItemCopy()
@@ -26,7 +27,10 @@ public class ItemCopy
         FMLJavaModLoadingContext.get().getModEventBus().addListener(this::setup);
         FMLJavaModLoadingContext.get().getModEventBus().addListener(this::doClientStuff);
 
-        MinecraftForge.EVENT_BUS.register(new CopyNamesServerStore.Events());
+        MinecraftForge.EVENT_BUS.register(new CopyNamesServerStore.Events.Server());
+
+        if(FMLLoader.getDist() == Dist.CLIENT)
+            MinecraftForge.EVENT_BUS.register(new CopyNamesServerStore.Events.Client());
 
         //noinspection ThisEscapedInObjectConstruction
         MinecraftForge.EVENT_BUS.register(this);
@@ -35,9 +39,6 @@ public class ItemCopy
 
     public static File getClientSaveDirectory()
     { return clientSaveDirectory; }
-
-    private static void setClientSaveDirectory(File clientSaveDirectory)
-    { ItemCopy.clientSaveDirectory = clientSaveDirectory; }
 
     private void setup(final FMLCommonSetupEvent event)
     { setupPacketChannel(); }
@@ -51,7 +52,6 @@ public class ItemCopy
 
     private void doClientStuff(final FMLClientSetupEvent event)
     {
-        setClientSaveDirectory(new File(Minecraft.getInstance().gameDirectory, "saveditems"));
         CopyNamesServerStore.setupClient();
     }
 
