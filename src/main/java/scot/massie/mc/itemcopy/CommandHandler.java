@@ -77,8 +77,12 @@ public final class CommandHandler
     private static final SuggestionProvider<CommandSourceStack> onlinePlayerNamesSuggester
             = (context, builder) ->
     {
+        if(!(context.getSource().getEntity() instanceof ServerPlayer commandSender))
+            return builder.buildFuture();
+
         for(String name : ServerLifecycleHooks.getCurrentServer().getPlayerList().getPlayerNamesArray())
-            builder.suggest(name);
+            if(!(name.equals(commandSender.getGameProfile().getName())))
+                builder.suggest(name);
 
         return builder.buildFuture();
     };
