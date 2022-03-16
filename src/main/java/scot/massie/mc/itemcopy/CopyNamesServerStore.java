@@ -35,26 +35,19 @@ public final class CopyNamesServerStore
     {
         public static final int messageId = 983;
 
-        public final String itemIdNamespace;
-        public final String itemIdPath;
+        @SuppressWarnings("PublicField")
+        public final ResourceLocation itemId;
 
-        public RefreshRequestPacket(String itemIdNamespace, String itemIdPath)
-        {
-            this.itemIdNamespace = itemIdNamespace;
-            this.itemIdPath = itemIdPath;
-        }
+        public RefreshRequestPacket(ResourceLocation itemId)
+        { this.itemId = itemId; }
 
         public void encode(FriendlyByteBuf buf)
-        {
-            buf.writeUtf(itemIdNamespace);
-            buf.writeUtf(itemIdPath);
-        }
+        { buf.writeResourceLocation(itemId); }
 
         public static RefreshRequestPacket decode(FriendlyByteBuf buf)
         {
-            String itemIdNamespace = buf.readUtf();
-            String itemIdPath = buf.readUtf();
-            return new RefreshRequestPacket(itemIdNamespace, itemIdPath);
+            ResourceLocation itemId = buf.readResourceLocation();
+            return new RefreshRequestPacket(itemId);
         }
     }
 
@@ -74,23 +67,21 @@ public final class CopyNamesServerStore
     {
         public static final int messageId = 662;
 
-        public final String itemIdNamespace;
-        public final String itemIdPath;
+        @SuppressWarnings("PublicField")
+        public final ResourceLocation itemId;
 
         @SuppressWarnings("PublicField")
         public final Collection<List<String>> paths;
 
-        private NamesPacket(String itemIdNamespace, String itemIdPath, Collection<List<String>> paths)
+        private NamesPacket(ResourceLocation itemId, Collection<List<String>> paths)
         {
-            this.itemIdNamespace = itemIdNamespace;
-            this.itemIdPath = itemIdPath;
+            this.itemId = itemId;
             this.paths = Collections.unmodifiableCollection(paths);
         }
 
         public void encode(FriendlyByteBuf buf)
         {
-            buf.writeUtf(itemIdNamespace);
-            buf.writeUtf(itemIdPath);
+            buf.writeResourceLocation(itemId);
             buf.writeInt(paths.size());
 
             for(List<String> path : paths)
@@ -104,8 +95,7 @@ public final class CopyNamesServerStore
 
         public static NamesPacket decode(FriendlyByteBuf buf)
         {
-            String itemIdNamespace = buf.readUtf();
-            String itemIdPath = buf.readUtf();
+            ResourceLocation itemId = buf.readResourceLocation();
             int pathCount = buf.readInt();
             List<List<String>> paths = new ArrayList<>(pathCount);
 
@@ -120,7 +110,7 @@ public final class CopyNamesServerStore
                 paths.add(path);
             }
 
-            return new NamesPacket(itemIdNamespace, itemIdPath, paths);
+            return new NamesPacket(itemId, paths);
         }
     }
 
@@ -357,13 +347,12 @@ public final class CopyNamesServerStore
     {
         NetworkEvent.Context ctx = contextSupplier.get();
         assert ctx.getSender() != null; // The packet is sent by players' clients.
-        ctx.enqueueWork(() -> storeNames(ctx.getSender().getUUID(), pkt.itemIdNamespace, pkt.itemIdPath, pkt.paths));
+        ctx.enqueueWork(() -> storeNames(ctx.getSender().getUUID(), pkt.itemId, pkt.paths));
         ctx.setPacketHandled(true);
     }
 
     public static void storeNames(UUID playerId,
-                                  String itemIdNamespace,
-                                  String itemIdPath,
+                                  ResourceLocation itemId,
                                   Iterable<? extends List<String>> paths)
     {
         synchronized(nameHierarchy)
@@ -372,7 +361,7 @@ public final class CopyNamesServerStore
                     = nameHierarchy.computeIfAbsent(playerId, uuid -> new HashMap<>());
 
             NameHierarchyNode namesForItem = new NameHierarchyNode("###ITEMROOT###");
-            namesForPlayer.put(new ResourceLocation(itemIdNamespace, itemIdPath), namesForItem);
+            namesForPlayer.put(itemId, namesForItem);
 
             for(List<String> path : paths)
                 namesForItem.makeAt(path);
@@ -421,21 +410,24 @@ public final class CopyNamesServerStore
                                             Supplier<? extends NetworkEvent.Context> contextSupplier)
     {
         NetworkEvent.Context ctx = contextSupplier.get();
-        ctx.enqueueWork(() -> provideRefreshedInfo(packet.itemIdNamespace, packet.itemIdPath));
+        ctx.enqueueWork(() -> provideRefreshedInfo(packet.itemId));
         ctx.setPacketHandled(true);
     }
 
-    public static void provideRefreshedInfo(String itemIdNamespace, String itemIdPath)
+    public static void provideRefreshedInfo(ResourceLocation itemId)
     {
-        File itemFolder = new File(new File(ItemCopy.getClientSaveDirectory(), itemIdNamespace), itemIdPath);
+        File itemFolder = ItemCopy.getClientSaveDirectory().toPath()
+                                  .resolve(itemId.getNamespace())
+                                  .resolve(itemId.getPath())
+                                  .toFile();
 
         if(!itemFolder.isDirectory())
         {
-            packetChannel.sendToServer(new NamesPacket(itemIdNamespace, itemIdPath, Collections.emptyList()));
+            packetChannel.sendToServer(new NamesPacket(itemId, Collections.emptyList()));
             return;
         }
 
-        packetChannel.sendToServer(new NamesPacket(itemIdNamespace, itemIdPath, getAvailablePaths(itemFolder)));
+        packetChannel.sendToServer(new NamesPacket(itemId, getAvailablePaths(itemFolder)));
     }
 
     public static void provideAllAvailableNames()
@@ -460,8 +452,8 @@ public final class CopyNamesServerStore
 
             for(File itemFolder : itemFolders)
             {
-                packetChannel.sendToServer(new NamesPacket(modFolder.getName(),
-                                                           itemFolder.getName(),
+                packetChannel.sendToServer(new NamesPacket(new ResourceLocation(modFolder.getName(),
+                                                                                itemFolder.getName()),
                                                            getAvailablePaths(itemFolder)));
             }
         }

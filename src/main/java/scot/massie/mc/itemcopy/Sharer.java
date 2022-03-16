@@ -629,7 +629,7 @@ public final class Sharer
             e.printStackTrace();
         }
 
-        CopyNamesServerStore.provideRefreshedInfo(packet.itemId.getNamespace(), packet.itemId.getPath());
+        CopyNamesServerStore.provideRefreshedInfo(packet.itemId);
     }
     //endregion
 }

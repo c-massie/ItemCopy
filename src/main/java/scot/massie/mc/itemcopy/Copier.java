@@ -14,6 +14,7 @@ import org.apache.commons.io.FileUtils;
 import java.io.File;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
@@ -22,14 +23,15 @@ import java.util.function.Supplier;
 
 public final class Copier
 {
+    @SuppressWarnings("ClassCanBeRecord")
     private static class CopyPacket
     {
         // Sent from server to client with data to save.
 
         public static final int messageId = 287;
 
-        public final String itemIdNamespace;
-        public final String itemIdPath;
+        @SuppressWarnings("PublicField")
+        public final ResourceLocation itemId;
 
         @SuppressWarnings("PublicField")
         public final List<String> copyPath;
@@ -37,21 +39,16 @@ public final class Copier
         @SuppressWarnings("PublicField")
         public final CompoundTag data;
 
-        public CopyPacket(String itemIdNamespace, String itemIdPath, List<String> copyPath, CompoundTag data)
+        public CopyPacket(ResourceLocation itemId, List<String> copyPath, CompoundTag data)
         {
-            this.itemIdNamespace = itemIdNamespace;
-            this.itemIdPath = itemIdPath;
+            this.itemId = itemId;
             this.copyPath = Collections.unmodifiableList(copyPath);
             this.data = data;
         }
 
-        public CopyPacket(ResourceLocation itemId, List<String> copyPath, CompoundTag data)
-        { this(itemId.getNamespace(), itemId.getPath(), copyPath, data); }
-
         public void encode(FriendlyByteBuf buf)
         {
-            buf.writeUtf(itemIdNamespace);
-            buf.writeUtf(itemIdPath);
+            buf.writeResourceLocation(itemId);
             buf.writeInt(copyPath.size());
 
             for(String step : copyPath)
@@ -62,8 +59,7 @@ public final class Copier
 
         public static CopyPacket decode(FriendlyByteBuf buf)
         {
-            String itemIdNamespace = buf.readUtf();
-            String itemIdPath = buf.readUtf();
+            ResourceLocation itemId = buf.readResourceLocation();
             int copyPathSize = buf.readInt();
             List<String> copyPath = new ArrayList<>(copyPathSize);
 
@@ -71,7 +67,7 @@ public final class Copier
                 copyPath.add(buf.readUtf());
 
             CompoundTag data = buf.readNbt();
-            return new CopyPacket(itemIdNamespace, itemIdPath, copyPath, data);
+            return new CopyPacket(itemId, copyPath, data);
         }
     }
 
@@ -126,31 +122,32 @@ public final class Copier
 
     public static void saveItemData(CopyPacket copyPacket)
     {
-        File saveLocation = new File(new File(ItemCopy.getClientSaveDirectory(),
-                                              copyPacket.itemIdNamespace),
-                                     copyPacket.itemIdPath);
+        Path saveLocation = ItemCopy.getClientSaveDirectory().toPath()
+                                    .resolve(copyPacket.itemId.getNamespace())
+                                    .resolve(copyPacket.itemId.getPath());
 
         for(String step : PathSanitiser.sanitise(copyPacket.copyPath))
-            saveLocation = new File(saveLocation, step);
+            saveLocation = saveLocation.resolve(step);
 
-        saveLocation = new File(saveLocation.getParentFile(), saveLocation.getName() + ItemCopy.itemFileExtension);
+        saveLocation = saveLocation.resolveSibling(saveLocation.getFileName().toString() + ItemCopy.itemFileExtension);
+        File saveFile = saveLocation.toFile();
 
-        if(saveLocation.exists())
-            if(!saveLocation.delete())
+        if(saveFile.exists())
+            if(!saveFile.delete())
             {
-                System.err.println("Could not delete pre-existing file at: " + saveLocation);
+                System.err.println("Could not delete pre-existing file at: " + saveFile);
                 return;
             }
 
         try
-        { FileUtils.writeStringToFile(saveLocation, copyPacket.data.toString(), StandardCharsets.UTF_8); }
+        { FileUtils.writeStringToFile(saveFile, copyPacket.data.toString(), StandardCharsets.UTF_8); }
         catch(IOException e)
         {
             System.err.println("Error saving file.");
             e.printStackTrace();
         }
 
-        CopyNamesServerStore.provideRefreshedInfo(copyPacket.itemIdNamespace, copyPacket.itemIdPath);
+        CopyNamesServerStore.provideRefreshedInfo(copyPacket.itemId);
     }
     //endregion
 }

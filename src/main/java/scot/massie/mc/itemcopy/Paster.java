@@ -18,6 +18,7 @@ import org.apache.commons.io.FileUtils;
 import java.io.File;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
@@ -26,32 +27,28 @@ import java.util.function.Supplier;
 
 public final class Paster
 {
+    @SuppressWarnings("ClassCanBeRecord")
     private static class PasteRequestPacket
     {
         // Sent from server to client to request a paste.
 
         private static final int messageId = 394;
 
-        public final String itemIdNamespace;
-        public final String itemIdPath;
+        @SuppressWarnings("PublicField")
+        public final ResourceLocation itemId;
 
         @SuppressWarnings("PublicField")
         public final List<String> copyPath;
 
-        public PasteRequestPacket(String itemIdNamespace, String itemIdPath, List<String> copyPath)
+        public PasteRequestPacket(ResourceLocation itemId, List<String> copyPath)
         {
-            this.itemIdNamespace = itemIdNamespace;
-            this.itemIdPath = itemIdPath;
+            this.itemId = itemId;
             this.copyPath = Collections.unmodifiableList(copyPath);
         }
 
-        public PasteRequestPacket(ResourceLocation itemId, List<String> copyPath)
-        { this(itemId.getNamespace(), itemId.getPath(), copyPath); }
-
         public void encode(FriendlyByteBuf buf)
         {
-            buf.writeUtf(itemIdNamespace);
-            buf.writeUtf(itemIdPath);
+            buf.writeResourceLocation(itemId);
             buf.writeInt(copyPath.size());
 
             for(String step : copyPath)
@@ -60,15 +57,14 @@ public final class Paster
 
         public static PasteRequestPacket decode(FriendlyByteBuf buf)
         {
-            String itemIdNamespace = buf.readUtf();
-            String itemIdPath = buf.readUtf();
+            ResourceLocation itemId = buf.readResourceLocation();
             int copyPathLength = buf.readInt();
             List<String> copyPath = new ArrayList<>();
 
             for(int i = 0; i < copyPathLength; i++)
                 copyPath.add(buf.readUtf());
 
-            return new PasteRequestPacket(itemIdNamespace, itemIdPath, copyPath);
+            return new PasteRequestPacket(itemId, copyPath);
         }
     }
 
@@ -115,21 +111,20 @@ public final class Paster
 
     public static void handlePasteRequest(PasteRequestPacket packet)
     {
-        File saveLocation = new File(new File(ItemCopy.getClientSaveDirectory(),
-                                              packet.itemIdNamespace),
-                                     packet.itemIdPath);
+        Path saveLocation = ItemCopy.getClientSaveDirectory().toPath()
+                                    .resolve(packet.itemId.getNamespace())
+                                    .resolve(packet.itemId.getPath());
 
-        List<String> sanitisedCopyPath = PathSanitiser.sanitise(packet.copyPath);
+        for(String step : PathSanitiser.sanitise(packet.copyPath))
+            saveLocation = saveLocation.resolve(step);
 
-        for(String s : sanitisedCopyPath)
-            saveLocation = new File(saveLocation, s);
+        saveLocation = saveLocation.resolveSibling(saveLocation.getFileName().toString() + ItemCopy.itemFileExtension);
+        File saveFile = saveLocation.toFile();
 
-        saveLocation = new File(saveLocation.getParentFile(), saveLocation.getName() + ItemCopy.itemFileExtension);
-
-        if(!saveLocation.isFile())
+        if(!saveFile.isFile())
         {
-            System.out.println("Copied item didn't exist: " + packet.itemIdNamespace + ":" + packet.itemIdPath
-                               + " - " + String.join("/", packet.copyPath));
+            System.out.println("Copied item didn't exist: " + packet.itemId + " - "
+                               + String.join("/", packet.copyPath));
 
             return;
         }
@@ -137,10 +132,10 @@ public final class Paster
         String data;
 
         try
-        { data = FileUtils.readFileToString(saveLocation, StandardCharsets.UTF_8); }
+        { data = FileUtils.readFileToString(saveFile, StandardCharsets.UTF_8); }
         catch(IOException e)
         {
-            System.err.println("Error reading item file at: " + saveLocation);
+            System.err.println("Error reading item file at: " + saveFile);
             e.printStackTrace();
             return;
         }
@@ -150,12 +145,10 @@ public final class Paster
         ItemStack itemInHand = player.getItemInHand(InteractionHand.MAIN_HAND);
         ResourceLocation itemId = itemInHand.getItem().getRegistryName();
 
-        if(   itemId == null
-           || !packet.itemIdNamespace.equals(itemId.getNamespace())
-           || !packet.itemIdPath.equals(itemId.getPath()))
+        if(!packet.itemId.equals(itemId))
         {
-            System.err.println("Item in hand (" + itemId + ") differed from expected item. ("
-                               + packet.itemIdNamespace + ":" + packet.itemIdPath +  ") Item not pasted.");
+            System.err.println("Item in hand (" + itemId + ") differed from expected item. (" + packet.itemId
+                               + ") Item not pasted.");
 
             return;
         }
@@ -163,7 +156,7 @@ public final class Paster
         try
         { itemInHand.setTag(NbtUtils.snbtToStructure(data)); }
         catch(CommandSyntaxException e)
-        { System.err.println("Invalid item NBT file at: " + saveLocation); }
+        { System.err.println("Invalid item NBT file at: " + saveFile); }
     }
     //endregion
 }
