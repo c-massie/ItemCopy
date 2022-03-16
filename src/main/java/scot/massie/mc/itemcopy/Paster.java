@@ -38,32 +38,24 @@ public final class Paster
         public final ResourceLocation itemId;
 
         @SuppressWarnings("PublicField")
-        public final List<String> copyPath;
+        public final CopyPath copyPath;
 
-        public PasteRequestPacket(ResourceLocation itemId, List<String> copyPath)
+        public PasteRequestPacket(ResourceLocation itemId, CopyPath copyPath)
         {
             this.itemId = itemId;
-            this.copyPath = Collections.unmodifiableList(copyPath);
+            this.copyPath = copyPath;
         }
 
         public void encode(FriendlyByteBuf buf)
         {
             buf.writeResourceLocation(itemId);
-            buf.writeInt(copyPath.size());
-
-            for(String step : copyPath)
-                buf.writeUtf(step);
+            copyPath.writeToBuf(buf);
         }
 
         public static PasteRequestPacket decode(FriendlyByteBuf buf)
         {
             ResourceLocation itemId = buf.readResourceLocation();
-            int copyPathLength = buf.readInt();
-            List<String> copyPath = new ArrayList<>();
-
-            for(int i = 0; i < copyPathLength; i++)
-                copyPath.add(buf.readUtf());
-
+            CopyPath copyPath = CopyPath.readFromBuf(buf);
             return new PasteRequestPacket(itemId, copyPath);
         }
     }
@@ -89,7 +81,7 @@ public final class Paster
     //endregion
 
     //region Server-side methods
-    public static void pasteItem(ServerPlayer player, ItemStack currentItemInHand, List<String> copyPath)
+    public static void pasteItem(ServerPlayer player, ItemStack currentItemInHand, CopyPath copyPath)
     {
         ResourceLocation itemId = currentItemInHand.getItem().getRegistryName();
 
@@ -115,7 +107,7 @@ public final class Paster
                                     .resolve(packet.itemId.getNamespace())
                                     .resolve(packet.itemId.getPath());
 
-        for(String step : PathSanitiser.sanitise(packet.copyPath))
+        for(String step : packet.copyPath.getStepsSanitised())
             saveLocation = saveLocation.resolve(step);
 
         saveLocation = saveLocation.resolveSibling(saveLocation.getFileName().toString() + ItemCopy.itemFileExtension);

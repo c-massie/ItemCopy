@@ -31,7 +31,7 @@ public final class CommandHandler
 
     private static SuggestionProvider<CommandSourceStack> getCopyPathSuggester(
             @SuppressWarnings("BoundedWildcard")
-            final TriFunc<UUID, ResourceLocation, List<String>, List<String>> suggestionGetterFunction)
+            final TriFunc<UUID, ResourceLocation, CopyPath, List<String>> suggestionGetterFunction)
     {
         return (context, builder) ->
         {
@@ -48,7 +48,7 @@ public final class CommandHandler
             if(itemId == null)
                 return builder.buildFuture();
 
-            List<String> copyPath = getCopyPath(context, true);
+            CopyPath copyPath = getCopyPath(context, true);
             List<String> suggestions = suggestionGetterFunction.apply(sender.getUUID(), itemId, copyPath);
 
             if(copyPath.isEmpty())
@@ -140,10 +140,10 @@ public final class CommandHandler
         return Arrays.asList(args.split("\\s+"));
     }
 
-    private static List<String> getCopyPath(CommandContext<CommandSourceStack> ctx)
+    private static CopyPath getCopyPath(CommandContext<CommandSourceStack> ctx)
     { return getCopyPath(ctx, false); }
 
-    private static List<String> getCopyPath(CommandContext<CommandSourceStack> ctx,
+    private static CopyPath getCopyPath(CommandContext<CommandSourceStack> ctx,
                                             boolean ignoreLastStepIfNotFollowedBySpace)
     {
         String copyPathUnsplit = null;
@@ -156,21 +156,21 @@ public final class CommandHandler
             }
 
         if(copyPathUnsplit == null)
-            return Collections.emptyList();
+            return CopyPath.empty();
 
-        List<String> path = splitArguments(copyPathUnsplit);
+        List<String> copyPathSteps = splitArguments(copyPathUnsplit);
 
         if(ignoreLastStepIfNotFollowedBySpace && !copyPathUnsplit.endsWith(" "))
         {
-            List<String> newPath = new ArrayList<>(path.size() - 1);
+            List<String> newCopyPathSteps = new ArrayList<>(copyPathSteps.size() - 1);
 
-            for(int i = 0; i < path.size() - 1; i++)
-                newPath.add(path.get(i));
+            for(int i = 0; i < copyPathSteps.size() - 1; i++)
+                newCopyPathSteps.add(copyPathSteps.get(i));
 
-            path = newPath;
+            copyPathSteps = newCopyPathSteps;
         }
 
-        return path;
+        return new CopyPath(copyPathSteps);
     }
 
     public static int cmdCopy(CommandContext<CommandSourceStack> context)
@@ -191,7 +191,7 @@ public final class CommandHandler
             return 1;
         }
 
-        List<String> copyPath = getCopyPath(context);
+        CopyPath copyPath = getCopyPath(context);
         ResourceLocation itemId = itemInHand.getItem().getRegistryName();
         boolean copyAlreadyExisted = CopyNamesServerStore.nameExists(player, itemId, copyPath);
         Copier.copyItem(player, itemInHand, copyPath);
@@ -228,7 +228,7 @@ public final class CommandHandler
             return 1;
         }
 
-        List<String> copyPath = getCopyPath(context);
+        CopyPath copyPath = getCopyPath(context);
         Paster.pasteItem(player, itemInHand, copyPath);
 
         // Edge case: If someone modifies the relevant saved items folder after the last time it was refreshed, and
@@ -271,7 +271,7 @@ public final class CommandHandler
             return 1;
         }
 
-        List<String> copyPath = getCopyPath(context);
+        CopyPath copyPath = getCopyPath(context);
 
         if(!CopyNamesServerStore.nameExists(sharer, itemId, copyPath))
         {
@@ -293,7 +293,7 @@ public final class CommandHandler
 
     public static int cmdAcceptSharedItem(
             @SuppressWarnings("BoundedWildcard") CommandContext<CommandSourceStack> context,
-            List<String> newCopyPath)
+            CopyPath newCopyPath)
     {
         CommandSourceStack src = context.getSource();
 

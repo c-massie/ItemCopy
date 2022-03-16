@@ -71,9 +71,9 @@ public final class CopyNamesServerStore
         public final ResourceLocation itemId;
 
         @SuppressWarnings("PublicField")
-        public final Collection<List<String>> paths;
+        public final Collection<CopyPath> paths;
 
-        private NamesPacket(ResourceLocation itemId, Collection<List<String>> paths)
+        private NamesPacket(ResourceLocation itemId, Collection<CopyPath> paths)
         {
             this.itemId = itemId;
             this.paths = Collections.unmodifiableCollection(paths);
@@ -84,31 +84,18 @@ public final class CopyNamesServerStore
             buf.writeResourceLocation(itemId);
             buf.writeInt(paths.size());
 
-            for(List<String> path : paths)
-            {
-                buf.writeInt(path.size());
-
-                for(String step : path)
-                    buf.writeUtf(step);
-            }
+            for(CopyPath path : paths)
+                path.writeToBuf(buf);
         }
 
         public static NamesPacket decode(FriendlyByteBuf buf)
         {
             ResourceLocation itemId = buf.readResourceLocation();
             int pathCount = buf.readInt();
-            List<List<String>> paths = new ArrayList<>(pathCount);
+            List<CopyPath> paths = new ArrayList<>(pathCount);
 
             for(int i = 0; i < pathCount; i++)
-            {
-                int pathSize = buf.readInt();
-                List<String> path = new ArrayList<>(pathSize);
-
-                for(int j = 0; j < pathSize; j++)
-                    path.add(buf.readUtf());
-
-                paths.add(path);
-            }
+                paths.add(CopyPath.readFromBuf(buf));
 
             return new NamesPacket(itemId, paths);
         }
@@ -164,7 +151,7 @@ public final class CopyNamesServerStore
             return child;
         }
 
-        public void makeAt(@SuppressWarnings("TypeMayBeWeakened") List<String> path)
+        public void makeAt(@SuppressWarnings("TypeMayBeWeakened") CopyPath path)
         {
             NameHierarchyNode current = this;
 
@@ -174,7 +161,7 @@ public final class CopyNamesServerStore
             current.isItem = true;
         }
 
-        public NameHierarchyNode getAt(@SuppressWarnings("TypeMayBeWeakened") List<String> path)
+        public NameHierarchyNode getAt(@SuppressWarnings("TypeMayBeWeakened") CopyPath path)
         {
             NameHierarchyNode current = this;
 
@@ -281,7 +268,7 @@ public final class CopyNamesServerStore
     //endregion
 
     //region Server-side methods
-    public static List<String> getNameSuggestions(UUID playerId, ResourceLocation itemId, List<String> precedingSteps)
+    public static List<String> getNameSuggestions(UUID playerId, ResourceLocation itemId, CopyPath precedingSteps)
     {
         synchronized(nameHierarchy)
         {
@@ -300,7 +287,7 @@ public final class CopyNamesServerStore
         }
     }
 
-    public static List<String> getFolderSuggestions(UUID playerId, ResourceLocation itemId, List<String> precedingSteps)
+    public static List<String> getFolderSuggestions(UUID playerId, ResourceLocation itemId, CopyPath precedingSteps)
     {
         synchronized(nameHierarchy)
         {
@@ -319,7 +306,7 @@ public final class CopyNamesServerStore
         }
     }
 
-    public static boolean nameExists(UUID playerId, ResourceLocation itemId, List<String> path)
+    public static boolean nameExists(UUID playerId, ResourceLocation itemId, CopyPath path)
     {
         synchronized(nameHierarchy)
         {
@@ -340,7 +327,7 @@ public final class CopyNamesServerStore
 
     public static boolean nameExists(@SuppressWarnings("TypeMayBeWeakened") ServerPlayer player,
                                      ResourceLocation itemId,
-                                     List<String> path)
+                                     CopyPath path)
     { return nameExists(player.getUUID(), itemId, path); }
 
     public static void storeNames(NamesPacket pkt, Supplier<? extends NetworkEvent.Context> contextSupplier)
@@ -353,7 +340,7 @@ public final class CopyNamesServerStore
 
     public static void storeNames(UUID playerId,
                                   ResourceLocation itemId,
-                                  Iterable<? extends List<String>> paths)
+                                  Iterable<CopyPath> paths)
     {
         synchronized(nameHierarchy)
         {
@@ -363,7 +350,7 @@ public final class CopyNamesServerStore
             NameHierarchyNode namesForItem = new NameHierarchyNode("###ITEMROOT###");
             namesForPlayer.put(itemId, namesForItem);
 
-            for(List<String> path : paths)
+            for(CopyPath path : paths)
                 namesForItem.makeAt(path);
         }
     }
@@ -459,9 +446,9 @@ public final class CopyNamesServerStore
         }
     }
 
-    public static Collection<List<String>> getAvailablePaths(File itemFolder)
+    public static Collection<CopyPath> getAvailablePaths(File itemFolder)
     {
-        return getAvailablePathsAsStream(itemFolder).map(p -> p.collect(Collectors.toList()))
+        return getAvailablePathsAsStream(itemFolder).map(p -> new CopyPath(p.collect(Collectors.toList())))
                                                     .collect(Collectors.toList());
     }
 

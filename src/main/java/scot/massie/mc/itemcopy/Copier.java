@@ -15,9 +15,6 @@ import java.io.File;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Path;
-import java.util.ArrayList;
-import java.util.Collections;
-import java.util.List;
 import java.util.Optional;
 import java.util.function.Supplier;
 
@@ -34,38 +31,29 @@ public final class Copier
         public final ResourceLocation itemId;
 
         @SuppressWarnings("PublicField")
-        public final List<String> copyPath;
+        public final CopyPath copyPath;
 
         @SuppressWarnings("PublicField")
         public final CompoundTag data;
 
-        public CopyPacket(ResourceLocation itemId, List<String> copyPath, CompoundTag data)
+        public CopyPacket(ResourceLocation itemId, CopyPath copyPath, CompoundTag data)
         {
             this.itemId = itemId;
-            this.copyPath = Collections.unmodifiableList(copyPath);
+            this.copyPath = copyPath;
             this.data = data;
         }
 
         public void encode(FriendlyByteBuf buf)
         {
             buf.writeResourceLocation(itemId);
-            buf.writeInt(copyPath.size());
-
-            for(String step : copyPath)
-                buf.writeUtf(step);
-
+            copyPath.writeToBuf(buf);
             buf.writeNbt(data);
         }
 
         public static CopyPacket decode(FriendlyByteBuf buf)
         {
             ResourceLocation itemId = buf.readResourceLocation();
-            int copyPathSize = buf.readInt();
-            List<String> copyPath = new ArrayList<>(copyPathSize);
-
-            for(int i = 0; i < copyPathSize; i++)
-                copyPath.add(buf.readUtf());
-
+            CopyPath copyPath = CopyPath.readFromBuf(buf);
             CompoundTag data = buf.readNbt();
             return new CopyPacket(itemId, copyPath, data);
         }
@@ -92,11 +80,8 @@ public final class Copier
     //endregion
 
     //region server-side methods
-    public static void copyItem(ServerPlayer player, ItemStack itemStack, List<String> copyPath)
+    public static void copyItem(ServerPlayer player, ItemStack itemStack, CopyPath copyPath)
     {
-        // TO DO: Add check to make sure data from itemStack isn't too big. If it is, fallback on sending a "copy it
-        // client-side" instruction.
-
         CompoundTag nbt = itemStack.getTag();
 
         if(nbt != null)
@@ -126,7 +111,7 @@ public final class Copier
                                     .resolve(copyPacket.itemId.getNamespace())
                                     .resolve(copyPacket.itemId.getPath());
 
-        for(String step : PathSanitiser.sanitise(copyPacket.copyPath))
+        for(String step : copyPacket.copyPath.getStepsSanitised())
             saveLocation = saveLocation.resolve(step);
 
         saveLocation = saveLocation.resolveSibling(saveLocation.getFileName().toString() + ItemCopy.itemFileExtension);

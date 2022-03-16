@@ -39,8 +39,8 @@ public final class Sharer
                              UUID sender,
                              UUID recipient,
                              ResourceLocation itemId,
-                             List<String> copyPath,
-                             List<String> recipientCopyPath,
+                             CopyPath copyPath,
+                             CopyPath recipientCopyPath,
                              long timeStamp)
     {
         private static int nextId = 0;
@@ -55,8 +55,8 @@ public final class Sharer
         public ShareOffer(UUID sender,
                           UUID recipient,
                           ResourceLocation itemId,
-                          List<String> copyPath,
-                          List<String> recipientCopyPath,
+                          CopyPath copyPath,
+                          CopyPath recipientCopyPath,
                           long timeStamp)
         { this(getNewId(), sender, recipient, itemId, copyPath, recipientCopyPath, timeStamp); }
 
@@ -69,7 +69,7 @@ public final class Sharer
         public ShareOffer withNewTimeStamp()
         { return this.withNewTimeStamp(System.currentTimeMillis()); }
 
-        public ShareOffer withRecipientCopyPath(List<String> newRecipientCopyPath)
+        public ShareOffer withRecipientCopyPath(CopyPath newRecipientCopyPath)
         { return new ShareOffer(offerId, sender, recipient, itemId, copyPath, newRecipientCopyPath, timeStamp); }
     }
 
@@ -103,12 +103,12 @@ public final class Sharer
         public final ResourceLocation itemId;
 
         @SuppressWarnings("PublicField")
-        public final List<String> copyPath;
+        public final CopyPath copyPath;
 
         public FulfilOfferRequestPacket(ShareOffer offer)
         { this(offer.offerId, offer.itemId, offer.copyPath); }
 
-        public FulfilOfferRequestPacket(int offerId, ResourceLocation itemId, List<String> copyPath)
+        public FulfilOfferRequestPacket(int offerId, ResourceLocation itemId, CopyPath copyPath)
         {
             this.offerId = offerId;
             this.itemId = itemId;
@@ -119,22 +119,14 @@ public final class Sharer
         {
             buf.writeInt(offerId);
             buf.writeResourceLocation(itemId);
-            buf.writeInt(copyPath.size());
-
-            for(String step : copyPath)
-                buf.writeUtf(step);
+            copyPath.writeToBuf(buf);
         }
 
         public static FulfilOfferRequestPacket decode(FriendlyByteBuf buf)
         {
             int offerId = buf.readInt();
             ResourceLocation itemId = buf.readResourceLocation();
-            int copyPathSize = buf.readInt();
-            List<String> copyPath = new ArrayList<>(copyPathSize);
-
-            for(int i = 0; i < copyPathSize; i++)
-                copyPath.add(buf.readUtf());
-
+            CopyPath copyPath = CopyPath.readFromBuf(buf);
             return new FulfilOfferRequestPacket(offerId, itemId, copyPath);
         }
     }
@@ -200,9 +192,9 @@ public final class Sharer
         public final ResourceLocation itemId;
 
         @SuppressWarnings("PublicField")
-        public final List<String> copyPath;
+        public final CopyPath copyPath;
 
-        public ProvideOfferItemDataPacket(CompoundTag itemData, ResourceLocation itemId, List<String> copyPath)
+        public ProvideOfferItemDataPacket(CompoundTag itemData, ResourceLocation itemId, CopyPath copyPath)
         {
             this.itemData = itemData;
             this.itemId = itemId;
@@ -213,22 +205,14 @@ public final class Sharer
         {
             buf.writeNbt(itemData);
             buf.writeResourceLocation(itemId);
-            buf.writeInt(copyPath.size());
-
-            for(String step : copyPath)
-                buf.writeUtf(step);
+            copyPath.writeToBuf(buf);
         }
 
         public static ProvideOfferItemDataPacket decode(FriendlyByteBuf buf)
         {
             CompoundTag itemData = buf.readNbt();
             ResourceLocation itemId = buf.readResourceLocation();
-            int copyPathSize = buf.readInt();
-            List<String> copyPath = new ArrayList<>(copyPathSize);
-
-            for(int i = 0; i < copyPathSize; i++)
-                copyPath.add(buf.readUtf());
-
+            CopyPath copyPath = CopyPath.readFromBuf(buf);
             return new ProvideOfferItemDataPacket(itemData, itemId, copyPath);
         }
     }
@@ -283,7 +267,7 @@ public final class Sharer
     public static void addOffer(ServerPlayer sender,
                                 ServerPlayer recipient,
                                 ResourceLocation itemId,
-                                List<String> copyPath)
+                                CopyPath copyPath)
     {
         UUID senderId = sender.getUUID();
         UUID recipientId = recipient.getUUID();
@@ -302,7 +286,7 @@ public final class Sharer
         recipient.displayClientMessage(new TextComponent(alertMsg), false);
     }
 
-    public static void acceptOffer(String senderName, ServerPlayer recipient, List<String> recipientCopyPath)
+    public static void acceptOffer(String senderName, ServerPlayer recipient, CopyPath recipientCopyPath)
     {
         ServerPlayer sender = ServerLifecycleHooks.getCurrentServer()
                                                   .getPlayerList()
@@ -317,7 +301,7 @@ public final class Sharer
         acceptOffer(sender, recipient, recipientCopyPath);
     }
 
-    public static void acceptOffer(ServerPlayer sender, ServerPlayer recipient, List<String> recipientCopyPath)
+    public static void acceptOffer(ServerPlayer sender, ServerPlayer recipient, CopyPath recipientCopyPath)
     {
         ShareOffer offer;
         String senderName = sender.getGameProfile().getName();
@@ -508,7 +492,7 @@ public final class Sharer
                                     .resolve(packet.itemId.getNamespace())
                                     .resolve(packet.itemId.getPath());
 
-        for(String step : PathSanitiser.sanitise(packet.copyPath))
+        for(String step : packet.copyPath.getStepsSanitised())
             fileLocation = fileLocation.resolve(step);
 
         fileLocation = fileLocation.resolveSibling(fileLocation.getFileName().toString() + ".itemnbt");
@@ -605,7 +589,7 @@ public final class Sharer
                                     .resolve(packet.itemId.getNamespace())
                                     .resolve(packet.itemId.getPath());
 
-        for(String step : PathSanitiser.sanitise(packet.copyPath))
+        for(String step : packet.copyPath.getStepsSanitised())
             saveLocation = saveLocation.resolve(step);
 
         saveLocation = saveLocation.resolveSibling(saveLocation.getFileName().toString() + ItemCopy.itemFileExtension);
