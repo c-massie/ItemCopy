@@ -1,10 +1,13 @@
 package scot.massie.mc.itemcopy;
 
+import com.mojang.brigadier.CommandDispatcher;
+import net.minecraft.commands.CommandSourceStack;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraftforge.api.distmarker.Dist;
 import net.minecraftforge.common.MinecraftForge;
 import net.minecraftforge.event.RegisterCommandsEvent;
 import net.minecraftforge.event.server.ServerStartingEvent;
+import net.minecraftforge.event.server.ServerStoppingEvent;
 import net.minecraftforge.eventbus.api.SubscribeEvent;
 import net.minecraftforge.fml.common.Mod;
 import net.minecraftforge.fml.event.lifecycle.FMLClientSetupEvent;
@@ -41,27 +44,8 @@ public class ItemCopy
     { return clientSaveDirectory; }
 
     private void setup(final FMLCommonSetupEvent event)
-    { setupPacketChannel(); }
-
-    @SubscribeEvent
-    public void registerCommands(RegisterCommandsEvent event)
     {
-        event.getDispatcher().register(CommandHandler.copyCommand);
-        event.getDispatcher().register(CommandHandler.pasteCommand);
-    }
-
-    private void doClientStuff(final FMLClientSetupEvent event)
-    {
-        CopyNamesServerStore.setupClient();
-    }
-
-    @SubscribeEvent
-    public void onServerStarting(@SuppressWarnings("unused") ServerStartingEvent event)
-    { ItemWhitelist.setup(); }
-
-    public void setupPacketChannel()
-    {
-        final String protocolVersion = "1";
+        final String protocolVersion = "2";
 
         SimpleChannel packetChannel = NetworkRegistry.newSimpleChannel(
                 new ResourceLocation("itemcopy", "copy"),
@@ -71,6 +55,35 @@ public class ItemCopy
 
         Copier.setup(packetChannel);
         Paster.setup(packetChannel);
+        Sharer.setup(packetChannel);
         CopyNamesServerStore.setup(packetChannel);
+    }
+
+    @SubscribeEvent
+    public void registerCommands(RegisterCommandsEvent event)
+    {
+        CommandDispatcher<CommandSourceStack> cmds = event.getDispatcher();
+        cmds.register(CommandHandler.copyCommand);
+        cmds.register(CommandHandler.pasteCommand);
+        cmds.register(CommandHandler.shareCommand);
+        cmds.register(CommandHandler.acceptSharedItemCommand);
+    }
+
+    private void doClientStuff(final FMLClientSetupEvent event)
+    {
+        CopyNamesServerStore.setupClient();
+    }
+
+    @SubscribeEvent
+    public void onServerStarting(@SuppressWarnings("unused") ServerStartingEvent event)
+    {
+        ItemWhitelist.setup();
+        Sharer.startPurgeRoutine();
+    }
+
+    @SubscribeEvent
+    public void onServerStopping(@SuppressWarnings("unused") ServerStoppingEvent event)
+    {
+        Sharer.stopPurgeRoutine();
     }
 }

@@ -23,6 +23,9 @@
 /logs/
 /run/
 
+# For extra run directories
+/run_*/
+
 # other
 eclipse
 run
