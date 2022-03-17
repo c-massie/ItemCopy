@@ -39,6 +39,7 @@ public final class Sharer
                              UUID sender,
                              UUID recipient,
                              ResourceLocation itemId,
+                             CompoundTag data,
                              CopyPath copyPath,
                              CopyPath recipientCopyPath,
                              long timeStamp)
@@ -58,19 +59,30 @@ public final class Sharer
                           CopyPath copyPath,
                           CopyPath recipientCopyPath,
                           long timeStamp)
-        { this(getNewId(), sender, recipient, itemId, copyPath, recipientCopyPath, timeStamp); }
+        { this(getNewId(), sender, recipient, itemId, null, copyPath, recipientCopyPath, timeStamp); }
+
+        public ShareOffer(UUID sender,
+                          UUID recipient,
+                          ResourceLocation itemId,
+                          CompoundTag data,
+                          CopyPath recipientCopyPath,
+                          long timeStamp)
+        { this(getNewId(), sender, recipient, itemId, data, null, recipientCopyPath, timeStamp); }
 
         public boolean hasExpired(long currentTimeInMillis)
         { return currentTimeInMillis > (timeStamp + offerLifespanInMilliseconds); }
 
+        public boolean hasDataAlready()
+        { return data != null; }
+
         public ShareOffer withNewTimeStamp(long timeStamp)
-        { return new ShareOffer(offerId, sender, recipient, itemId, copyPath, recipientCopyPath, timeStamp); }
+        { return new ShareOffer(offerId, sender, recipient, itemId, data, copyPath, recipientCopyPath, timeStamp); }
 
         public ShareOffer withNewTimeStamp()
         { return this.withNewTimeStamp(System.currentTimeMillis()); }
 
         public ShareOffer withRecipientCopyPath(CopyPath newRecipientCopyPath)
-        { return new ShareOffer(offerId, sender, recipient, itemId, copyPath, newRecipientCopyPath, timeStamp); }
+        { return new ShareOffer(offerId, sender, recipient, itemId, data, copyPath, newRecipientCopyPath, timeStamp); }
     }
 
     static record ShareOfferBeingProcessed(ShareOffer offer,
@@ -269,19 +281,32 @@ public final class Sharer
                                 ResourceLocation itemId,
                                 CopyPath copyPath)
     {
-        UUID senderId = sender.getUUID();
-        UUID recipientId = recipient.getUUID();
+        addOffer(sender, recipient, new ShareOffer(sender.getUUID(),
+                                                   recipient.getUUID(),
+                                                   itemId,
+                                                   copyPath,
+                                                   copyPath,
+                                                   System.currentTimeMillis()));
+    }
 
+    public static void addOffer(ServerPlayer sender, ServerPlayer recipient, ResourceLocation itemId, CompoundTag data)
+    {
+        addOffer(sender, recipient, new ShareOffer(sender.getUUID(),
+                                                   recipient.getUUID(),
+                                                   itemId,
+                                                   data,
+                                                   CopyPath.defaultPath,
+                                                   System.currentTimeMillis()));
+    }
+
+    private static void addOffer(ServerPlayer sender, ServerPlayer recipient, ShareOffer offer)
+    {
         synchronized(offers)
-        {
-            offers.computeIfAbsent(recipientId, uuid -> new HashMap<>())
-                  .put(senderId,
-                       new ShareOffer(senderId, recipientId, itemId, copyPath, copyPath, System.currentTimeMillis()));
-        }
+        { offers.computeIfAbsent(recipient.getUUID(), uuid -> new HashMap<>()).put(sender.getUUID(), offer); }
 
         String senderName = sender.getGameProfile().getName();
-        String alertMsg = senderName + " has offered to share a copy of " + itemId + " with you. To accept this, type: "
-                          + "/acceptshareditem " + senderName + " <copy name>";
+        String alertMsg = senderName + " has offered to share a copy of " + offer.itemId + " with you. To accept this, "
+                          + "type: /acceptshareditem " + senderName + " <copy name>";
 
         recipient.displayClientMessage(new TextComponent(alertMsg), false);
     }
@@ -324,6 +349,12 @@ public final class Sharer
 
         if(recipientCopyPath != null)
             offer = offer.withRecipientCopyPath(recipientCopyPath);
+
+        if(offer.hasDataAlready())
+        {
+            deliverOfferFulfilmentToRecipient(sender, offer, offer.data);
+            return;
+        }
 
         synchronized(offersBeingProcessed)
         { offersBeingProcessed.put(offer.offerId, new ShareOfferBeingProcessed(offer)); }

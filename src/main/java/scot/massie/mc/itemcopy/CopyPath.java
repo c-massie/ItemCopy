@@ -10,7 +10,8 @@ import java.util.List;
 
 public final class CopyPath implements Iterable<String>
 {
-    private static final CopyPath empty = new CopyPath();
+    public static final CopyPath empty = new CopyPath();
+    public static final CopyPath defaultPath = new CopyPath("shareditem");
 
     private final List<String> steps;
 

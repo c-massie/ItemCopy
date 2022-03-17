@@ -7,6 +7,7 @@ import com.mojang.brigadier.context.ParsedCommandNode;
 import com.mojang.brigadier.suggestion.SuggestionProvider;
 import net.minecraft.commands.CommandSourceStack;
 import net.minecraft.commands.Commands;
+import net.minecraft.nbt.CompoundTag;
 import net.minecraft.network.chat.TextComponent;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.level.ServerPlayer;
@@ -116,6 +117,7 @@ public final class CommandHandler
             = Commands.literal("shareitem")
                     .then(Commands.argument("recipient", StringArgumentType.word())
                             .suggests(onlinePlayerNamesSuggester)
+                            .executes(CommandHandler::cmdShare_itemInHand)
                             .then(Commands.argument("copypath", StringArgumentType.greedyString())
                                     .suggests(savedCopyPathsSuggester)
                                     .executes(CommandHandler::cmdShare)));
@@ -285,6 +287,47 @@ public final class CommandHandler
         }
 
         Sharer.addOffer(sharer, recipient, itemId, copyPath);
+        src.sendSuccess(new TextComponent("Offered! Awaiting acceptance."), false);
+        return 1;
+    }
+
+    public static int cmdShare_itemInHand(CommandContext<CommandSourceStack> context)
+    {
+        CommandSourceStack src = context.getSource();
+
+        if(!(src.getEntity() instanceof ServerPlayer sharer))
+        {
+            src.sendFailure(new TextComponent("Only players can copy items in their hands."));
+            return 1;
+        }
+
+        ItemStack itemInHand = sharer.getItemInHand(InteractionHand.MAIN_HAND);
+
+        if(itemInHand == ItemStack.EMPTY)
+        {
+            src.sendFailure(new TextComponent("You need to have something in your hand to share."));
+            return 1;
+        }
+
+        CompoundTag nbt = itemInHand.getTag();
+
+        if(nbt == null)
+        {
+            src.sendFailure(new TextComponent("That item has no NBT data."));
+            return 1;
+        }
+
+        ResourceLocation itemId = itemInHand.getItem().getRegistryName();
+        String recipientName = StringArgumentType.getString(context, "recipient");
+        ServerPlayer recipient = ServerLifecycleHooks.getCurrentServer().getPlayerList().getPlayerByName(recipientName);
+
+        if(recipient == null)
+        {
+            src.sendFailure(new TextComponent("No online player with the name " + recipientName));
+            return 1;
+        }
+
+        Sharer.addOffer(sharer, recipient, itemId, nbt);
         src.sendSuccess(new TextComponent("Offered! Awaiting acceptance."), false);
         return 1;
     }
