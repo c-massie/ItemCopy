@@ -291,7 +291,8 @@ public final class CommandHandler
         return 1;
     }
 
-    public static int cmdShare_itemInHand(CommandContext<CommandSourceStack> context)
+    public static int cmdShare_itemInHand(
+            @SuppressWarnings("BoundedWildcard") CommandContext<CommandSourceStack> context)
     {
         CommandSourceStack src = context.getSource();
 

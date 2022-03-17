@@ -4,7 +4,6 @@ import net.minecraft.network.FriendlyByteBuf;
 
 import java.util.ArrayList;
 import java.util.Arrays;
-import java.util.Collections;
 import java.util.Iterator;
 import java.util.List;
 
@@ -15,8 +14,8 @@ public final class CopyPath implements Iterable<String>
 
     private final List<String> steps;
 
-    public CopyPath(List<String> steps)
-    { this.steps = Collections.unmodifiableList(new ArrayList<>(steps)); }
+    public CopyPath(@SuppressWarnings("TypeMayBeWeakened") List<String> steps)
+    { this.steps = List.copyOf(steps); }
 
     public CopyPath(String... steps)
     { this(Arrays.asList(steps)); }
