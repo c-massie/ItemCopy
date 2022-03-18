@@ -34,26 +34,19 @@ public final class CopyNamesServerStore
     {
         public static final int messageId = 983;
 
-        public final String itemIdNamespace;
-        public final String itemIdPath;
+        @SuppressWarnings("PublicField")
+        public final ResourceLocation itemId;
 
-        public RefreshRequestPacket(String itemIdNamespace, String itemIdPath)
-        {
-            this.itemIdNamespace = itemIdNamespace;
-            this.itemIdPath = itemIdPath;
-        }
+        public RefreshRequestPacket(ResourceLocation itemId)
+        { this.itemId = itemId; }
 
         public void encode(PacketBuffer buf)
-        {
-            buf.writeUtf(itemIdNamespace);
-            buf.writeUtf(itemIdPath);
-        }
+        { buf.writeResourceLocation(itemId); }
 
         public static RefreshRequestPacket decode(PacketBuffer buf)
         {
-            String itemIdNamespace = buf.readUtf();
-            String itemIdPath = buf.readUtf();
-            return new RefreshRequestPacket(itemIdNamespace, itemIdPath);
+            ResourceLocation itemId = buf.readResourceLocation();
+            return new RefreshRequestPacket(itemId);
         }
     }
 
@@ -72,53 +65,37 @@ public final class CopyNamesServerStore
     {
         public static final int messageId = 662;
 
-        public final String itemIdNamespace;
-        public final String itemIdPath;
+        @SuppressWarnings("PublicField")
+        public final ResourceLocation itemId;
 
         @SuppressWarnings("PublicField")
-        public final Collection<List<String>> paths;
+        public final Collection<CopyPath> paths;
 
-        private NamesPacket(String itemIdNamespace, String itemIdPath, Collection<List<String>> paths)
+        private NamesPacket(ResourceLocation itemId, Collection<CopyPath> paths)
         {
-            this.itemIdNamespace = itemIdNamespace;
-            this.itemIdPath = itemIdPath;
+            this.itemId = itemId;
             this.paths = Collections.unmodifiableCollection(paths);
         }
 
         public void encode(PacketBuffer buf)
         {
-            buf.writeUtf(itemIdNamespace);
-            buf.writeUtf(itemIdPath);
+            buf.writeResourceLocation(itemId);
             buf.writeInt(paths.size());
 
-            for(List<String> path : paths)
-            {
-                buf.writeInt(path.size());
-
-                for(String step : path)
-                    buf.writeUtf(step);
-            }
+            for(CopyPath path : paths)
+                path.writeToBuf(buf);
         }
 
         public static NamesPacket decode(PacketBuffer buf)
         {
-            String itemIdNamespace = buf.readUtf();
-            String itemIdPath = buf.readUtf();
+            ResourceLocation itemId = buf.readResourceLocation();
             int pathCount = buf.readInt();
-            List<List<String>> paths = new ArrayList<>(pathCount);
+            List<CopyPath> paths = new ArrayList<>(pathCount);
 
             for(int i = 0; i < pathCount; i++)
-            {
-                int pathSize = buf.readInt();
-                List<String> path = new ArrayList<>(pathSize);
+                paths.add(CopyPath.readFromBuf(buf));
 
-                for(int j = 0; j < pathSize; j++)
-                    path.add(buf.readUtf());
-
-                paths.add(path);
-            }
-
-            return new NamesPacket(itemIdNamespace, itemIdPath, paths);
+            return new NamesPacket(itemId, paths);
         }
     }
 
@@ -172,7 +149,7 @@ public final class CopyNamesServerStore
             return child;
         }
 
-        public void makeAt(@SuppressWarnings("TypeMayBeWeakened") List<String> path)
+        public void makeAt(@SuppressWarnings("TypeMayBeWeakened") CopyPath path)
         {
             NameHierarchyNode current = this;
 
@@ -182,7 +159,7 @@ public final class CopyNamesServerStore
             current.isItem = true;
         }
 
-        public NameHierarchyNode getAt(@SuppressWarnings("TypeMayBeWeakened") List<String> path)
+        public NameHierarchyNode getAt(@SuppressWarnings("TypeMayBeWeakened") CopyPath path)
         {
             NameHierarchyNode current = this;
 
@@ -198,41 +175,56 @@ public final class CopyNamesServerStore
         }
     }
 
-    @Mod.EventBusSubscriber
-    public static class Events
+
+    public static final class Events
     {
-        // client-side only
-        @SubscribeEvent
-        public void onPlayerJoinServer(@SuppressWarnings("unused") ClientPlayerNetworkEvent.LoggedInEvent event)
-        {
-            provideAllAvailableNames();
+        // This is split into separate "Server" and "Client" listener classes because attempting to register anything in
+        // ClientPlayerNetworkEvent normally results in dedicated server crashes.* Registrations of these event
+        // listeners needs to be behind a side check. Expected functionality is that on server-side, these listeners are
+        // simply ignored and don't crash the server.
+        //
+        // * […].RuntimeException: Attempted to load class […]/MultiPlayerGameMode for invalid dist DEDICATED_SERVER
 
-            try
-            { saveFolderAlterationMonitor.start(); }
-            catch(Exception e)
-            { e.printStackTrace(); }
+        private Events()
+        { }
+
+        @Mod.EventBusSubscriber
+        public static class Server
+        {
+            @SubscribeEvent
+            public void onPlayerLeaveServer(PlayerEvent.PlayerLoggedOutEvent event)
+            { clearNames(event.getPlayer().getUUID()); }
         }
 
-        // client-side only
-        @SubscribeEvent
-        public void onPlayerLeaveServer(ClientPlayerNetworkEvent.LoggedOutEvent event)
+        @Mod.EventBusSubscriber
+        public static class Client
         {
-            // This is fired when a player leaves a world, OR when a player quits the game. If the player is not in a
-            // world when they quit the game, event.getPlayer() returns null. I'm only interested in when the player
-            // leaves a world.
-            if(event.getPlayer() == null)
-                return;
+            @SubscribeEvent()
+            public void onPlayerJoinServer(@SuppressWarnings("unused") ClientPlayerNetworkEvent.LoggedInEvent event)
+            {
+                provideAllAvailableNames();
 
-            try
-            { saveFolderAlterationMonitor.stop(); }
-            catch(Exception e)
-            { e.printStackTrace(); }
+                try
+                { saveFolderAlterationMonitor.start(); }
+                catch(Exception e)
+                { e.printStackTrace(); }
+            }
+
+            @SubscribeEvent
+            public void onPlayerLeaveServer(ClientPlayerNetworkEvent.LoggedOutEvent event)
+            {
+                // This is fired when a player leaves a world, OR when a player quits the game. If the player is not in
+                // a world when they quit the game, event.getPlayer() returns null. I'm only interested in when the
+                // player leaves a world.
+                if(event.getPlayer() == null)
+                    return;
+
+                try
+                { saveFolderAlterationMonitor.stop(); }
+                catch(Exception e)
+                { e.printStackTrace(); }
+            }
         }
-
-        // server-side only
-        @SubscribeEvent
-        public void onPlayerLeaveServer(PlayerEvent.PlayerLoggedOutEvent event)
-        { clearNames(event.getPlayer().getUUID()); }
     }
 
     private static final Map<UUID, Map<ResourceLocation, NameHierarchyNode>> nameHierarchy = new HashMap<>();
@@ -274,7 +266,7 @@ public final class CopyNamesServerStore
     //endregion
 
     //region Server-side methods
-    public static List<String> getNameSuggestions(UUID playerId, ResourceLocation itemId, List<String> precedingSteps)
+    public static List<String> getNameSuggestions(UUID playerId, ResourceLocation itemId, CopyPath precedingSteps)
     {
         synchronized(nameHierarchy)
         {
@@ -293,7 +285,7 @@ public final class CopyNamesServerStore
         }
     }
 
-    public static List<String> getFolderSuggestions(UUID playerId, ResourceLocation itemId, List<String> precedingSteps)
+    public static List<String> getFolderSuggestions(UUID playerId, ResourceLocation itemId, CopyPath precedingSteps)
     {
         synchronized(nameHierarchy)
         {
@@ -312,7 +304,7 @@ public final class CopyNamesServerStore
         }
     }
 
-    public static boolean nameExists(UUID playerId, ResourceLocation itemId, List<String> path)
+    public static boolean nameExists(UUID playerId, ResourceLocation itemId, CopyPath path)
     {
         synchronized(nameHierarchy)
         {
@@ -331,21 +323,20 @@ public final class CopyNamesServerStore
         }
     }
 
-    public static boolean nameExists(ServerPlayerEntity player, ResourceLocation itemId, List<String> path)
+    public static boolean nameExists(ServerPlayerEntity player,
+                                     ResourceLocation itemId,
+                                     CopyPath path)
     { return nameExists(player.getUUID(), itemId, path); }
 
-    public static void storeNames(NamesPacket packet, Supplier<? extends NetworkEvent.Context> contextSupplier)
+    public static void storeNames(NamesPacket pkt, Supplier<? extends NetworkEvent.Context> contextSupplier)
     {
         NetworkEvent.Context ctx = contextSupplier.get();
         assert ctx.getSender() != null; // The packet is sent by players' clients.
-        storeNames(ctx.getSender().getUUID(), packet.itemIdNamespace, packet.itemIdPath, packet.paths);
+        ctx.enqueueWork(() -> storeNames(ctx.getSender().getUUID(), pkt.itemId, pkt.paths));
         ctx.setPacketHandled(true);
     }
 
-    public static void storeNames(UUID playerId,
-                                  String itemIdNamespace,
-                                  String itemIdPath,
-                                  Iterable<? extends List<String>> paths)
+    public static void storeNames(UUID playerId, ResourceLocation itemId, Iterable<CopyPath> paths)
     {
         synchronized(nameHierarchy)
         {
@@ -353,9 +344,9 @@ public final class CopyNamesServerStore
                     = nameHierarchy.computeIfAbsent(playerId, uuid -> new HashMap<>());
 
             NameHierarchyNode namesForItem = new NameHierarchyNode("###ITEMROOT###");
-            namesForPlayer.put(new ResourceLocation(itemIdNamespace, itemIdPath), namesForItem);
+            namesForPlayer.put(itemId, namesForItem);
 
-            for(List<String> path : paths)
+            for(CopyPath path : paths)
                 namesForItem.makeAt(path);
         }
     }
@@ -364,7 +355,7 @@ public final class CopyNamesServerStore
     {
         NetworkEvent.Context ctx = contextSupplier.get();
         assert ctx.getSender() != null; // The packet is sent by players' clients.
-        clearNames(ctx.getSender().getUUID());
+        ctx.enqueueWork(() -> clearNames(ctx.getSender().getUUID()));
         ctx.setPacketHandled(true);
     }
 
@@ -401,21 +392,25 @@ public final class CopyNamesServerStore
     public static void provideRefreshedInfo(RefreshRequestPacket packet,
                                             Supplier<? extends NetworkEvent.Context> contextSupplier)
     {
-        provideRefreshedInfo(packet.itemIdNamespace, packet.itemIdPath);
-        contextSupplier.get().setPacketHandled(true);
+        NetworkEvent.Context ctx = contextSupplier.get();
+        ctx.enqueueWork(() -> provideRefreshedInfo(packet.itemId));
+        ctx.setPacketHandled(true);
     }
 
-    public static void provideRefreshedInfo(String itemIdNamespace, String itemIdPath)
+    public static void provideRefreshedInfo(ResourceLocation itemId)
     {
-        File itemFolder = new File(new File(ItemCopy.getClientSaveDirectory(), itemIdNamespace), itemIdPath);
+        File itemFolder = ItemCopy.getClientSaveDirectory().toPath()
+                                  .resolve(itemId.getNamespace())
+                                  .resolve(itemId.getPath())
+                                  .toFile();
 
         if(!itemFolder.isDirectory())
         {
-            packetChannel.sendToServer(new NamesPacket(itemIdNamespace, itemIdPath, Collections.emptyList()));
+            packetChannel.sendToServer(new NamesPacket(itemId, Collections.emptyList()));
             return;
         }
 
-        packetChannel.sendToServer(new NamesPacket(itemIdNamespace, itemIdPath, getAvailablePaths(itemFolder)));
+        packetChannel.sendToServer(new NamesPacket(itemId, getAvailablePaths(itemFolder)));
     }
 
     public static void provideAllAvailableNames()
@@ -440,16 +435,16 @@ public final class CopyNamesServerStore
 
             for(File itemFolder : itemFolders)
             {
-                packetChannel.sendToServer(new NamesPacket(modFolder.getName(),
-                                                           itemFolder.getName(),
+                packetChannel.sendToServer(new NamesPacket(new ResourceLocation(modFolder.getName(),
+                                                                                itemFolder.getName()),
                                                            getAvailablePaths(itemFolder)));
             }
         }
     }
 
-    public static Collection<List<String>> getAvailablePaths(File itemFolder)
+    public static Collection<CopyPath> getAvailablePaths(File itemFolder)
     {
-        return getAvailablePathsAsStream(itemFolder).map(p -> p.collect(Collectors.toList()))
+        return getAvailablePathsAsStream(itemFolder).map(p -> new CopyPath(p.collect(Collectors.toList())))
                                                     .collect(Collectors.toList());
     }
 
@@ -458,7 +453,7 @@ public final class CopyNamesServerStore
     {
         File[] savedItemFiles
                 = itemFolder.listFiles(f ->    f.isFile()
-                                               && f.getName().toLowerCase().endsWith(ItemCopy.itemFileExtension));
+                                            && f.getName().toLowerCase().endsWith(ItemCopy.itemFileExtension));
 
         File[] subdirectories
                 = itemFolder.listFiles(f -> f.isDirectory() && !f.getName().contains("."));

@@ -9,9 +9,11 @@ import net.minecraft.command.CommandSource;
 import net.minecraft.command.Commands;
 import net.minecraft.entity.player.ServerPlayerEntity;
 import net.minecraft.item.ItemStack;
+import net.minecraft.nbt.CompoundNBT;
 import net.minecraft.util.Hand;
 import net.minecraft.util.ResourceLocation;
 import net.minecraft.util.text.StringTextComponent;
+import net.minecraftforge.fml.server.ServerLifecycleHooks;
 
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -28,9 +30,9 @@ public final class CommandHandler
     private interface TriFunc<T1, T2, T3, R>
     { R apply(T1 val1, T2 val2, T3 val3); }
 
-    private static SuggestionProvider<CommandSource> getCopyPathSuggestionProvider(
+    private static SuggestionProvider<CommandSource> getCopyPathSuggester(
             @SuppressWarnings("BoundedWildcard")
-            final TriFunc<UUID, ResourceLocation, List<String>, List<String>> suggestionGetterFunction)
+            final TriFunc<UUID, ResourceLocation, CopyPath, List<String>> suggestionGetterFunction)
     {
         return (context, builder) ->
         {
@@ -38,6 +40,7 @@ public final class CommandHandler
                 return builder.buildFuture();
 
             ServerPlayerEntity sender = (ServerPlayerEntity)context.getSource().getEntity();
+
             ItemStack itemStack = sender.getItemInHand(Hand.MAIN_HAND);
 
             if(itemStack == ItemStack.EMPTY || !playerCanPasteItem(sender, itemStack))
@@ -48,7 +51,7 @@ public final class CommandHandler
             if(itemId == null)
                 return builder.buildFuture();
 
-            List<String> copyPath = getCopyPath(context, true);
+            CopyPath copyPath = getCopyPath(context, true);
             List<String> suggestions = suggestionGetterFunction.apply(sender.getUUID(), itemId, copyPath);
 
             if(copyPath.isEmpty())
@@ -68,24 +71,71 @@ public final class CommandHandler
         };
     }
 
-    private static final SuggestionProvider<CommandSource> savedCopyPathsProvider
-            = getCopyPathSuggestionProvider(CopyNamesServerStore::getNameSuggestions);
+    private static final SuggestionProvider<CommandSource> savedCopyPathsSuggester
+            = getCopyPathSuggester(CopyNamesServerStore::getNameSuggestions);
 
-    private static final SuggestionProvider<CommandSource> savedCopyPathDirectoriesProvider
-            = getCopyPathSuggestionProvider(CopyNamesServerStore::getFolderSuggestions);
+    private static final SuggestionProvider<CommandSource> savedCopyPathDirectoriesSuggester
+            = getCopyPathSuggester(CopyNamesServerStore::getFolderSuggestions);
+
+    private static final SuggestionProvider<CommandSource> onlinePlayerNamesSuggester
+            = (context, builder) ->
+    {
+        if(!(context.getSource().getEntity() instanceof ServerPlayerEntity))
+            return builder.buildFuture();
+
+        ServerPlayerEntity commandSender = (ServerPlayerEntity)context.getSource().getEntity();
+
+        for(String name : ServerLifecycleHooks.getCurrentServer().getPlayerList().getPlayerNamesArray())
+            if(!(name.equals(commandSender.getGameProfile().getName())))
+                builder.suggest(name);
+
+        return builder.buildFuture();
+    };
+
+    private static final SuggestionProvider<CommandSource> playersOfferingItemsSuggester
+            = (context, builder) ->
+    {
+        if(!(context.getSource().getEntity() instanceof ServerPlayerEntity))
+            return builder.buildFuture();
+
+        ServerPlayerEntity commandSender = (ServerPlayerEntity)context.getSource().getEntity();
+
+        for(String name : Sharer.getNamesOfPlayersOffering(commandSender.getUUID()))
+            builder.suggest(name);
+
+        return builder.buildFuture();
+    };
 
 
     public static final LiteralArgumentBuilder<CommandSource> copyCommand
             = Commands.literal("copyitem")
-                    .then(Commands.argument("copypath", StringArgumentType.greedyString())
-                            .suggests(savedCopyPathDirectoriesProvider)
+                      .then(Commands.argument("copypath", StringArgumentType.greedyString())
+                            .suggests(savedCopyPathDirectoriesSuggester)
                             .executes(CommandHandler::cmdCopy));
 
     public static final LiteralArgumentBuilder<CommandSource> pasteCommand
             = Commands.literal("pasteitem")
                     .then(Commands.argument("copypath", StringArgumentType.greedyString())
-                            .suggests(savedCopyPathsProvider)
+                            .suggests(savedCopyPathsSuggester)
                             .executes(CommandHandler::cmdPaste));
+
+    public static final LiteralArgumentBuilder<CommandSource> shareCommand
+            = Commands.literal("shareitem")
+                    .then(Commands.argument("recipient", StringArgumentType.word())
+                            .suggests(onlinePlayerNamesSuggester)
+                            .executes(CommandHandler::cmdShare_itemInHand)
+                            .then(Commands.argument("copypath", StringArgumentType.greedyString())
+                                    .suggests(savedCopyPathsSuggester)
+                                    .executes(CommandHandler::cmdShare)));
+
+    public static final LiteralArgumentBuilder<CommandSource> acceptSharedItemCommand
+            = Commands.literal("acceptshareditem")
+                    .then(Commands.argument("sender", StringArgumentType.word())
+                            .suggests(playersOfferingItemsSuggester)
+                            .executes(CommandHandler::cmdAcceptSharedItem_sameCopyPath)
+                            .then(Commands.argument("copypath", StringArgumentType.greedyString())
+                                    .suggests(savedCopyPathDirectoriesSuggester)
+                                    .executes(CommandHandler::cmdAcceptSharedItem_specifiedCopyPath)));
 
 
     private CommandHandler()
@@ -102,34 +152,36 @@ public final class CommandHandler
         return Arrays.asList(args.split("\\s+"));
     }
 
-    private static List<String> getCopyPath(CommandContext<CommandSource> ctx)
+    private static CopyPath getCopyPath(CommandContext<CommandSource> ctx)
     { return getCopyPath(ctx, false); }
 
-    private static List<String> getCopyPath(CommandContext<CommandSource> ctx,
-                                            boolean ignoreLastStepIfNotFollowedBySpace)
+    private static CopyPath getCopyPath(CommandContext<CommandSource> ctx, boolean ignoreLastStepIfNotFollowedBySpace)
     {
         String copyPathUnsplit = null;
 
         for(ParsedCommandNode<CommandSource> parsedNode : ctx.getNodes())
             if(parsedNode.getNode().getName().equals("copypath"))
+            {
                 copyPathUnsplit = parsedNode.getRange().get(ctx.getInput());
+                break;
+            }
 
         if(copyPathUnsplit == null)
-            return Collections.emptyList();
+            return CopyPath.empty();
 
-        List<String> path = splitArguments(copyPathUnsplit);
+        List<String> copyPathSteps = splitArguments(copyPathUnsplit);
 
         if(ignoreLastStepIfNotFollowedBySpace && !copyPathUnsplit.endsWith(" "))
         {
-            List<String> newPath = new ArrayList<>(path.size() - 1);
+            List<String> newCopyPathSteps = new ArrayList<>(copyPathSteps.size() - 1);
 
-            for(int i = 0; i < path.size() - 1; i++)
-                newPath.add(path.get(i));
+            for(int i = 0; i < copyPathSteps.size() - 1; i++)
+                newCopyPathSteps.add(copyPathSteps.get(i));
 
-            path = newPath;
+            copyPathSteps = newCopyPathSteps;
         }
 
-        return path;
+        return new CopyPath(copyPathSteps);
     }
 
     public static int cmdCopy(CommandContext<CommandSource> context)
@@ -142,7 +194,7 @@ public final class CommandHandler
             return 1;
         }
 
-        ServerPlayerEntity player = (ServerPlayerEntity)(src.getEntity());
+        ServerPlayerEntity player = (ServerPlayerEntity)src.getEntity();
         ItemStack itemInHand = player.getItemInHand(Hand.MAIN_HAND);
 
         if(itemInHand == ItemStack.EMPTY)
@@ -151,7 +203,7 @@ public final class CommandHandler
             return 1;
         }
 
-        List<String> copyPath = getCopyPath(context);
+        CopyPath copyPath = getCopyPath(context);
         ResourceLocation itemId = itemInHand.getItem().getRegistryName();
         boolean copyAlreadyExisted = CopyNamesServerStore.nameExists(player, itemId, copyPath);
         Copier.copyItem(player, itemInHand, copyPath);
@@ -174,7 +226,7 @@ public final class CommandHandler
             return 1;
         }
 
-        ServerPlayerEntity player = (ServerPlayerEntity)(src.getEntity());
+        ServerPlayerEntity player = (ServerPlayerEntity)src.getEntity();
         ItemStack itemInHand = player.getItemInHand(Hand.MAIN_HAND);
 
         if(itemInHand == ItemStack.EMPTY)
@@ -189,7 +241,7 @@ public final class CommandHandler
             return 1;
         }
 
-        List<String> copyPath = getCopyPath(context);
+        CopyPath copyPath = getCopyPath(context);
         Paster.pasteItem(player, itemInHand, copyPath);
 
         // Edge case: If someone modifies the relevant saved items folder after the last time it was refreshed, and
@@ -201,6 +253,123 @@ public final class CommandHandler
             src.sendFailure(new StringTextComponent("No copy with the name or path \"" + String.join(" ", copyPath)
                                                     + "\" existed."));
 
+        return 1;
+    }
+
+    public static int cmdShare(CommandContext<CommandSource> context)
+    {
+        CommandSource src = context.getSource();
+
+        if(!(src.getEntity() instanceof ServerPlayerEntity))
+        {
+            src.sendFailure(new StringTextComponent("Only players can copy items in their hands."));
+            return 1;
+        }
+
+        ServerPlayerEntity sharer = (ServerPlayerEntity)src.getEntity();
+        ItemStack itemInHand = sharer.getItemInHand(Hand.MAIN_HAND);
+
+        if(itemInHand == ItemStack.EMPTY)
+        {
+            src.sendFailure(new StringTextComponent("You need to have something in your hand to share a version of."));
+            return 1;
+        }
+
+        ResourceLocation itemId = itemInHand.getItem().getRegistryName();
+        String recipientName = StringArgumentType.getString(context, "recipient");
+
+        ServerPlayerEntity recipient = ServerLifecycleHooks.getCurrentServer()
+                                                           .getPlayerList()
+                                                           .getPlayerByName(recipientName);
+
+        if(recipient == null)
+        {
+            src.sendFailure(new StringTextComponent("No online player with the name " + recipientName));
+            return 1;
+        }
+
+        CopyPath copyPath = getCopyPath(context);
+
+        if(!CopyNamesServerStore.nameExists(sharer, itemId, copyPath))
+        {
+            src.sendFailure(new StringTextComponent("No copy with the name or path \"" + String.join(" ", copyPath)
+                                              + "\" existed."));
+            return 1;
+        }
+
+        Sharer.addOffer(sharer, recipient, itemId, copyPath);
+        src.sendSuccess(new StringTextComponent("Offered! Awaiting acceptance."), false);
+        return 1;
+    }
+
+    public static int cmdShare_itemInHand(@SuppressWarnings("BoundedWildcard") CommandContext<CommandSource> context)
+    {
+        CommandSource src = context.getSource();
+
+        if(!(src.getEntity() instanceof ServerPlayerEntity))
+        {
+            src.sendFailure(new StringTextComponent("Only players can copy items in their hands."));
+            return 1;
+        }
+
+        ServerPlayerEntity sharer = (ServerPlayerEntity)src.getEntity();
+
+        ItemStack itemInHand = sharer.getItemInHand(Hand.MAIN_HAND);
+
+        if(itemInHand == ItemStack.EMPTY)
+        {
+            src.sendFailure(new StringTextComponent("You need to have something in your hand to share."));
+            return 1;
+        }
+
+        CompoundNBT nbt = itemInHand.getTag();
+
+        if(nbt == null)
+        {
+            src.sendFailure(new StringTextComponent("That item has no NBT data."));
+            return 1;
+        }
+
+        ResourceLocation itemId = itemInHand.getItem().getRegistryName();
+        String recipientName = StringArgumentType.getString(context, "recipient");
+
+        ServerPlayerEntity recipient = ServerLifecycleHooks.getCurrentServer()
+                                                           .getPlayerList()
+                                                           .getPlayerByName(recipientName);
+
+        if(recipient == null)
+        {
+            src.sendFailure(new StringTextComponent("No online player with the name " + recipientName));
+            return 1;
+        }
+
+        Sharer.addOffer(sharer, recipient, itemId, nbt);
+        src.sendSuccess(new StringTextComponent("Offered! Awaiting acceptance."), false);
+        return 1;
+    }
+
+    public static int cmdAcceptSharedItem_sameCopyPath(CommandContext<CommandSource> context)
+    { return cmdAcceptSharedItem(context, null); }
+
+    public static int cmdAcceptSharedItem_specifiedCopyPath(CommandContext<CommandSource> context)
+    { return cmdAcceptSharedItem(context, getCopyPath(context)); }
+
+    public static int cmdAcceptSharedItem(
+            @SuppressWarnings("BoundedWildcard") CommandContext<CommandSource> context,
+            CopyPath newCopyPath)
+    {
+        CommandSource src = context.getSource();
+
+        if(!(src.getEntity() instanceof ServerPlayerEntity))
+        {
+            src.sendFailure(new StringTextComponent("Only players can copy items in their hands."));
+            return 1;
+        }
+
+        ServerPlayerEntity recipient = (ServerPlayerEntity)src.getEntity();
+        String senderName = StringArgumentType.getString(context, "sender");
+        src.sendSuccess(new StringTextComponent("Accepted!"), false);
+        Sharer.acceptOffer(senderName, recipient, newCopyPath); // null = use sender's copypath.
         return 1;
     }
 }

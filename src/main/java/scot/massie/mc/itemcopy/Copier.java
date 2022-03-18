@@ -14,9 +14,7 @@ import org.apache.commons.io.FileUtils;
 import java.io.File;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
-import java.util.ArrayList;
-import java.util.Collections;
-import java.util.List;
+import java.nio.file.Path;
 import java.util.Optional;
 import java.util.function.Supplier;
 
@@ -28,50 +26,35 @@ public final class Copier
 
         public static final int messageId = 287;
 
-        public final String itemIdNamespace;
-        public final String itemIdPath;
+        @SuppressWarnings("PublicField")
+        public final ResourceLocation itemId;
 
         @SuppressWarnings("PublicField")
-        public final List<String> copyPath;
+        public final CopyPath copyPath;
 
         @SuppressWarnings("PublicField")
         public final CompoundNBT data;
 
-        public CopyPacket(String itemIdNamespace, String itemIdPath, List<String> copyPath, CompoundNBT data)
+        public CopyPacket(ResourceLocation itemId, CopyPath copyPath, CompoundNBT data)
         {
-            this.itemIdNamespace = itemIdNamespace;
-            this.itemIdPath = itemIdPath;
-            this.copyPath = Collections.unmodifiableList(copyPath);
+            this.itemId = itemId;
+            this.copyPath = copyPath;
             this.data = data;
         }
 
-        public CopyPacket(ResourceLocation itemId, List<String> copyPath, CompoundNBT data)
-        { this(itemId.getNamespace(), itemId.getPath(), copyPath, data); }
-
         public void encode(PacketBuffer buf)
         {
-            buf.writeUtf(itemIdNamespace);
-            buf.writeUtf(itemIdPath);
-            buf.writeInt(copyPath.size());
-
-            for(String step : copyPath)
-                buf.writeUtf(step);
-
+            buf.writeResourceLocation(itemId);
+            copyPath.writeToBuf(buf);
             buf.writeNbt(data);
         }
 
         public static CopyPacket decode(PacketBuffer buf)
         {
-            String itemIdNamespace = buf.readUtf();
-            String itemIdPath = buf.readUtf();
-            int copyPathSize = buf.readInt();
-            List<String> copyPath = new ArrayList<>(copyPathSize);
-
-            for(int i = 0; i < copyPathSize; i++)
-                copyPath.add(buf.readUtf());
-
+            ResourceLocation itemId = buf.readResourceLocation();
+            CopyPath copyPath = CopyPath.readFromBuf(buf);
             CompoundNBT data = buf.readNbt();
-            return new CopyPacket(itemIdNamespace, itemIdPath, copyPath, data);
+            return new CopyPacket(itemId, copyPath, data);
         }
     }
 
@@ -96,11 +79,8 @@ public final class Copier
     //endregion
 
     //region server-side methods
-    public static void copyItem(ServerPlayerEntity player, ItemStack itemStack, List<String> copyPath)
+    public static void copyItem(ServerPlayerEntity player, ItemStack itemStack, CopyPath copyPath)
     {
-        // TO DO: Add check to make sure data from itemStack isn't too big. If it is, fallback on sending a "copy it
-        // client-side" instruction.
-
         CompoundNBT nbt = itemStack.getTag();
 
         if(nbt != null)
@@ -119,37 +99,39 @@ public final class Copier
     //region client-side methods
     public static void saveItemData(CopyPacket copyPacket, Supplier<? extends NetworkEvent.Context> contextSupplier)
     {
-        saveItemData(copyPacket);
-        contextSupplier.get().setPacketHandled(true);
+        NetworkEvent.Context ctx = contextSupplier.get();
+        ctx.enqueueWork(() -> saveItemData(copyPacket));
+        ctx.setPacketHandled(true);
     }
 
     public static void saveItemData(CopyPacket copyPacket)
     {
-        File saveLocation = new File(new File(ItemCopy.getClientSaveDirectory(),
-                                              copyPacket.itemIdNamespace),
-                                     copyPacket.itemIdPath);
+        Path saveLocation = ItemCopy.getClientSaveDirectory().toPath()
+                                    .resolve(copyPacket.itemId.getNamespace())
+                                    .resolve(copyPacket.itemId.getPath());
 
-        for(String step : PathSanitiser.sanitise(copyPacket.copyPath))
-            saveLocation = new File(saveLocation, step);
+        for(String step : copyPacket.copyPath.getStepsSanitised())
+            saveLocation = saveLocation.resolve(step);
 
-        saveLocation = new File(saveLocation.getParentFile(), saveLocation.getName() + ItemCopy.itemFileExtension);
+        saveLocation = saveLocation.resolveSibling(saveLocation.getFileName().toString() + ItemCopy.itemFileExtension);
+        File saveFile = saveLocation.toFile();
 
-        if(saveLocation.exists())
-            if(!saveLocation.delete())
+        if(saveFile.exists())
+            if(!saveFile.delete())
             {
-                System.err.println("Could not delete pre-existing file at: " + saveLocation);
+                System.err.println("Could not delete pre-existing file at: " + saveFile);
                 return;
             }
 
         try
-        { FileUtils.writeStringToFile(saveLocation, copyPacket.data.toString(), StandardCharsets.UTF_8); }
+        { FileUtils.writeStringToFile(saveFile, copyPacket.data.toString(), StandardCharsets.UTF_8); }
         catch(IOException e)
         {
             System.err.println("Error saving file.");
             e.printStackTrace();
         }
 
-        CopyNamesServerStore.provideRefreshedInfo(copyPacket.itemIdNamespace, copyPacket.itemIdPath);
+        CopyNamesServerStore.provideRefreshedInfo(copyPacket.itemId);
     }
     //endregion
 }
