@@ -1,12 +1,20 @@
 # Itemcopy
 
-This mod adds two commands: `/copyitem` and `/pasteitem`.
+This mod adds the ability to copy, paste, and share items with NBT data.
 
 The intent of this mod is to give players the ability to copy items they may have created in a way that doesn't give them the ability to create new items. It was inspired by the desire to easily store, recall, and share Chisels & Bits patterns.
+
+## Commands
 
 `/copyitem <name>` lets you copy the current item in your hand, with a given name, to a file. (see below) This name may be multiple words long. You can use the same name for copies of different items. (e.g. for a book and for a banner)
 
 `/pasteitem <name>` lets you paste a previously copied item onto the item in your hand, as long as it's an item of the same type. As you type, possible copies will be suggested. This allows you to copy and paste items between worlds and even onto servers.
+
+`/shareitem <recipient name>` shares the item in your hand with another player. If they accept, they will have access to it as though they had copied it themselves.
+
+`/shareitem <recipient name> <copy name>` shares an already made copy of an item with another player, where "copy name" is the name an item was copied as. (e.g. with `/copyitem`)
+
+`/acceptshareditem <sender name> <copy name>` accepts an offer to share a copy of an item from another player. "Copy name" is the name the copy will be saved as. If no "copy name" is provided, it will be saved with the name the person sharing the item gave it, unless they're sharing the item in their hand and not a saved copy, in which case it will be saved as "shareditem".
 
 ## Whitelist
 
@@ -35,3 +43,5 @@ Some items that seem conceptually variants of the same item may be entirely sepa
 ## Technical
 
 Built against Forge 37.1.1 for Minecraft 1.17.1.
+
+This mod is required on both the server and client sides.

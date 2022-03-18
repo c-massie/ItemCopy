@@ -1,9 +1,9 @@
 package scot.massie.mc.itemcopy;
 
-import net.minecraft.client.Minecraft;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemStack;
+import net.minecraftforge.fml.loading.FMLLoader;
 import org.apache.commons.io.FileUtils;
 
 import java.io.File;
@@ -19,7 +19,11 @@ public final class ItemWhitelist
 {
     private static final Object syncLock = new Object();
     private static Set<String> allowedItems;
-    private static File whitelistFile;
+
+    private static final File whitelistFile = FMLLoader.getGamePath()
+                                                       .resolve("config")
+                                                       .resolve("item-whitelist.txt")
+                                                       .toFile();
 
     private static final List<String> defaultAllowedItems = Arrays.asList(
             "chiselsandbits:pattern_multi_use",
@@ -77,7 +81,6 @@ public final class ItemWhitelist
         synchronized(syncLock)
         { allowedItems = new HashSet<>(); }
 
-        whitelistFile = new File(new File(Minecraft.getInstance().gameDirectory, "config"), "itemcopy-whitelist.txt");
         load();
     }
 
