@@ -594,8 +594,6 @@ public final class Sharer
 
     public static void purgeOldOffers()
     {
-        System.out.println("Purging old offers!");
-
         synchronized(offers)
         {
             long currentTime = System.currentTimeMillis();
